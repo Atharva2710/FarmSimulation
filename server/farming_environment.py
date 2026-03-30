@@ -58,6 +58,9 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         self._last_grade:     float            = 0.0
         self._withered_plots: set              = set()
 
+        # Auto-initialize so the env works even without explicit reset()
+        self.reset()
+
     # ── config helpers ───────────────────────────────────────────────────
 
     def _task_config(self) -> Dict[str, Any]:
@@ -358,7 +361,40 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         return round(max(0.05, reward), 4)
 
     def _handle_wait(self) -> float:
-        return -0.05
+        active_plots = sum(
+            1 for p in self._plots
+            if p.stage in ("seedling", "growing")
+        )
+
+        mature_plots = sum(
+            1 for p in self._plots
+            if p.stage == "mature"
+        )
+
+        seeds_in_hand = sum(self._seed_inventory.values())
+        empty_plots = sum(1 for p in self._plots if p.stage == "empty")
+        idle_empty_plots = empty_plots if seeds_in_hand > 0 else 0
+
+        storage_has_crops = any(v > 0 for v in self._storage.values())
+
+        if mature_plots > 0:
+            # waiting with harvestable crops — risking withering
+            return round(-0.3 * mature_plots, 4)
+
+        if active_plots > 0 and idle_empty_plots == 0:
+            # crops growing, nothing else to do — smart patience
+            return round(0.05 * active_plots, 4)
+
+        if idle_empty_plots > 0:
+            # has seeds and empty plots but not planting
+            return round(-0.1 * idle_empty_plots, 4)
+
+        if storage_has_crops and self._money > 0:
+            # has crops in storage ready to sell but waiting
+            return -0.2
+
+        # truly idle — no crops growing, no seeds, no storage, doing nothing
+        return -0.5
 
     def _daily_passive_reward(self) -> float:
         reward = 0.0

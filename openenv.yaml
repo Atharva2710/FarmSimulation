@@ -1,0 +1,44 @@
+name: farming-env
+version: "1.0.0"
+description: >
+  A farming simulation RL environment where an agent manages
+  4 land plots across 3 rotating climates, buying seeds,
+  planting crops, irrigating, harvesting and selling for profit.
+author: "your-hf-username"
+license: MIT
+tags:
+  - openenv
+  - farming
+  - resource-management
+  - planning
+  - rl
+
+server:
+  port: 7860
+  path: server/app.py
+  object: app
+
+action_class: FarmAction
+observation_class: FarmObservation
+
+tasks:
+  - id: task_1
+    name: "Single Crop Stable"
+    difficulty: easy
+    description: >
+      30 days, $200 starting money, temperate-dominant climate.
+      Goal: double your money. One crop type recommended.
+
+  - id: task_2
+    name: "Multi-Crop Market Timing"
+    difficulty: medium
+    description: >
+      45 days, $150 starting money, full climate rotation.
+      Goal: profit across all 3 crops, sell at peak market prices.
+
+  - id: task_3
+    name: "Drought Survival"
+    difficulty: hard
+    description: >
+      60 days, $100 starting money, drought events, fast spoilage.
+      Goal: survive and profit under resource pressure.
