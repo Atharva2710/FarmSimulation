@@ -17,6 +17,7 @@ from models import (
     ClimateState, FarmAction, FarmObservation, FarmState, PlotState,
     MarketPrice,
 )
+from server.tasks import EpisodeRecord, grade_episode
 
 
 # ── Helper functions ─────────────────────────────────────────────────────────
@@ -50,6 +51,12 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         self._step_count:     int              = 0
         self._max_days:       int              = 30
         self._done:           bool             = False
+
+        self._withered_count: int              = 0
+        self._healthy_days:   int              = 0
+        self._sell_events:    list             = []
+        self._last_grade:     float            = 0.0
+        self._withered_plots: set              = set()
 
     # ── config helpers ───────────────────────────────────────────────────
 
@@ -109,6 +116,12 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         self._max_days       = cfg["max_days"]
         self._done           = False
 
+        self._withered_count = 0
+        self._healthy_days   = 0
+        self._sell_events    = []
+        self._last_grade     = 0.0
+        self._withered_plots = set()
+
         # 4 empty plots
         self._plots = [
             PlotState(plot_id=i) for i in range(4)
@@ -158,15 +171,41 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         # advance the world by one day
         self._advance_day()
 
+        # count healthy days (at least 2 plots active and healthy)
+        healthy_plots = sum(
+            1 for p in self._plots
+            if p.stage not in ("empty", "withered") and p.health >= 0.6
+        )
+        if healthy_plots >= 2:
+            self._healthy_days += 1
+
         # post-advance penalties (spoilage already done inside _advance_day)
         reward += self._post_advance_penalties()
 
         # check done
         done = self._day >= self._max_days or self._money <= 0.0
 
-        # terminal bonus if episode ended naturally (not bankruptcy)
-        if done and self._money > 0.0:
-            reward += self._terminal_bonus()
+        if done:
+            storage_value = sum(
+                self._storage[crop] * self._market_prices[crop].sell_price
+                for crop in self._storage
+            )
+            record = EpisodeRecord(
+                task_id=self.task_id,
+                initial_money=self._task_config()["money"],
+                final_money=self._money,
+                storage_value=storage_value,
+                total_reward=self._total_reward + reward,
+                days_elapsed=self._day,
+                max_days=self._max_days,
+                withered_count=self._withered_count,
+                drought_days=self._day if self._drought_active else 0,
+                healthy_days=self._healthy_days,
+                sell_events=self._sell_events,
+            )
+            self._last_grade = grade_episode(record)
+            if self._money > 0.0:
+                reward += self._terminal_bonus()
 
         self._total_reward += reward
         obs = self._build_observation(reward=round(reward, 4), done=done)
@@ -306,6 +345,15 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         base_revenue    = SEED_CONFIG[crop]["base_sell"] * qty
         price_premium   = (revenue - base_revenue) / max(base_revenue, 1.0)
         reward          = 0.3 + price_premium * 0.5
+        
+        self._sell_events.append({
+            "day":        self._day,
+            "crop":       crop,
+            "qty":        qty,
+            "price":      price,
+            "base_price": SEED_CONFIG[crop]["base_sell"],
+        })
+
         # selling above base price gives up to +0.8, below gives as low as 0.05
         return round(max(0.05, reward), 4)
 
@@ -321,16 +369,11 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
 
     def _post_advance_penalties(self) -> float:
         penalty = 0.0
-
-        # penalise any plots that just withered
         for plot in self._plots:
-            if plot.stage == "withered":
-                penalty -= 5.0   # missed harvest window
-
-        # penalise spoilage — check how much was lost
-        # (spoilage is applied inside _advance_day, track via a snapshot)
-        # We use a light proxy: if total storage dropped we don't double-count,
-        # the withered penalty is the main signal here.
+            if plot.stage == "withered" and plot.plot_id not in self._withered_plots:
+                penalty -= 5.0
+                self._withered_count += 1
+                self._withered_plots.add(plot.plot_id)
         return round(penalty, 4)
 
     def _terminal_bonus(self) -> float:
@@ -515,7 +558,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         reward: Optional[float],
         done: bool,
     ) -> FarmObservation:
-        return FarmObservation(
+        obs = FarmObservation(
             day=self._day,
             money=round(self._money, 2),
             water_tank=round(self._water_tank / WATER_TANK_CAPACITY, 3),
@@ -529,6 +572,9 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             reward=reward,
             done=done,
         )
+        obs.metadata["grade"] = self._last_grade
+        obs.metadata["withered_count"] = self._withered_count
+        return obs
 
     # ── state property ───────────────────────────────────────────────────
 
