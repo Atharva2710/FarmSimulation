@@ -128,128 +128,226 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         **kwargs: Any,
     ) -> FarmObservation:
         self._step_count += 1
+        reward = 0.0
+
+        # validate action object exists
+        if action is None:
+            action = FarmAction(action_type="wait")
+
+        # dispatch to handler, each returns a float reward delta
+        act = action.action_type
+
+        if act == "buy_seeds":
+            reward += self._handle_buy_seeds(action)
+        elif act == "plant":
+            reward += self._handle_plant(action)
+        elif act == "irrigate":
+            reward += self._handle_irrigate(action)
+        elif act == "harvest":
+            reward += self._handle_harvest(action)
+        elif act == "sell":
+            reward += self._handle_sell(action)
+        elif act == "wait":
+            reward += self._handle_wait()
+        else:
+            reward += -1.0   # unknown action penalty
+
+        # daily passive rewards/penalties before advancing the day
+        reward += self._daily_passive_reward()
+
+        # advance the world by one day
         self._advance_day()
-        obs = self._build_observation(reward=0.0, done=self._day >= self._max_days)
-        self._total_reward += 0.0
+
+        # post-advance penalties (spoilage already done inside _advance_day)
+        reward += self._post_advance_penalties()
+
+        # check done
+        done = self._day >= self._max_days or self._money <= 0.0
+
+        # terminal bonus if episode ended naturally (not bankruptcy)
+        if done and self._money > 0.0:
+            reward += self._terminal_bonus()
+
+        self._total_reward += reward
+        obs = self._build_observation(reward=round(reward, 4), done=done)
         return obs
 
     # ── action handlers ──────────────────────────────────────────────────
 
-    def _do_buy_seeds(self, action: FarmAction) -> tuple[float, str]:
+    def _handle_buy_seeds(self, action: FarmAction) -> float:
         if action.seed_type is None or action.seed_type not in SEED_CONFIG:
-            return -1.0, f"Invalid seed_type: {action.seed_type}"
-        qty = action.quantity or 1
-        price = self._market_prices[action.seed_type].buy_price * qty
-        if price > self._money:
-            return -0.5, f"Not enough money: need ${price:.2f}, have ${self._money:.2f}"
-        self._money -= price
-        self._seed_inventory[action.seed_type] += qty
-        return 0.1, ""  # small positive reward for buying
+            return -1.0
+        if action.quantity is None or action.quantity <= 0:
+            return -1.0
 
-    def _do_plant(self, action: FarmAction) -> tuple[float, str]:
-        if action.plot_id is None:
-            return -1.0, "plot_id is required for plant"
+        seed  = action.seed_type
+        qty   = action.quantity
+        cost  = self._market_prices[seed].buy_price * qty
+
+        if cost > self._money:
+            return -1.0   # cannot afford
+
+        self._money -= cost
+        self._seed_inventory[seed] += qty
+        return 0.0   # neutral — reward comes when seeds are used well
+
+    def _handle_plant(self, action: FarmAction) -> float:
+        if action.plot_id is None or not (0 <= action.plot_id <= 3):
+            return -1.0
         if action.seed_type is None or action.seed_type not in SEED_CONFIG:
-            return -1.0, f"Invalid seed_type: {action.seed_type}"
-        if action.plot_id < 0 or action.plot_id > 3:
-            return -1.0, f"Invalid plot_id: {action.plot_id}"
+            return -1.0
 
         plot = self._plots[action.plot_id]
+        seed = action.seed_type
+
         if plot.stage != "empty":
-            return -0.5, f"Plot {action.plot_id} is not empty (stage={plot.stage})"
+            return -1.0   # plot occupied
 
-        if self._seed_inventory.get(action.seed_type, 0) <= 0:
-            return -0.5, f"No {action.seed_type} seeds in inventory"
+        if self._seed_inventory.get(seed, 0) < 1:
+            return -1.0   # no seeds in hand
 
-        self._seed_inventory[action.seed_type] -= 1
-        self._plots[action.plot_id] = PlotState(
-            plot_id=action.plot_id,
-            crop_type=action.seed_type,
-            stage="seedling",
-            days_planted=0,
-            soil_moisture=plot.soil_moisture,
-            health=1.0,
-            yield_estimate=0.0,
-        )
-        return 0.5, ""
+        # execute
+        self._seed_inventory[seed] -= 1
+        plot.crop_type      = seed
+        plot.stage          = "seedling"
+        plot.days_planted   = 0
+        plot.soil_moisture  = 0.5
+        plot.health         = 1.0
+        plot.yield_estimate = SEED_CONFIG[seed]["yield_kg"]
 
-    def _do_irrigate(self, action: FarmAction) -> tuple[float, str]:
-        if action.plot_id is None:
-            return -1.0, "plot_id is required for irrigate"
-        if action.plot_id < 0 or action.plot_id > 3:
-            return -1.0, f"Invalid plot_id: {action.plot_id}"
+        return 0.2   # small positive: agent committed to a plan
+
+    def _handle_irrigate(self, action: FarmAction) -> float:
+        if action.plot_id is None or not (0 <= action.plot_id <= 3):
+            return -1.0
 
         plot = self._plots[action.plot_id]
+
         if plot.stage in ("empty", "withered"):
-            return -0.5, f"Plot {action.plot_id} cannot be irrigated (stage={plot.stage})"
+            return -1.0
 
         if self._water_tank < IRRIGATION_COST:
-            return -0.5, "Not enough water in tank"
+            return -1.0   # tank empty
 
-        self._water_tank -= IRRIGATION_COST
-        new_moisture = min(1.0, plot.soil_moisture + 0.3)
-        self._plots[action.plot_id] = plot.model_copy(update={"soil_moisture": new_moisture})
-        return 0.2, ""
+        # wasteful irrigation penalty
+        if plot.soil_moisture > 0.8:
+            self._water_tank -= IRRIGATION_COST
+            return -0.5   # used water but didn't need to
 
-    def _do_harvest(self, action: FarmAction) -> tuple[float, str]:
-        if action.plot_id is None:
-            return -1.0, "plot_id is required for harvest"
-        if action.plot_id < 0 or action.plot_id > 3:
-            return -1.0, f"Invalid plot_id: {action.plot_id}"
+        # good irrigation
+        self._water_tank       -= IRRIGATION_COST
+        plot.soil_moisture      = min(1.0, plot.soil_moisture + 0.3)
+
+        # bonus if crop was in danger (moisture was critically low)
+        if plot.soil_moisture < 0.25:
+            return 0.5   # rescued a crop
+        return 0.1
+
+    def _handle_harvest(self, action: FarmAction) -> float:
+        if action.plot_id is None or not (0 <= action.plot_id <= 3):
+            return -1.0
 
         plot = self._plots[action.plot_id]
+
         if plot.stage != "mature":
-            return -0.5, f"Plot {action.plot_id} is not mature (stage={plot.stage})"
+            return -1.0   # nothing to harvest
 
-        crop = plot.crop_type
-        if crop is None:
-            return -1.0, "Internal error: mature plot has no crop_type"
+        crop      = plot.crop_type
+        yield_kg  = plot.yield_estimate   # already health-adjusted
 
-        harvested_kg = _compute_yield_estimate(plot)
+        # check storage capacity
+        current_total = sum(self._storage.values())
+        space         = STORAGE_CAPACITY - current_total
+        stored_kg     = min(yield_kg, space)
+        lost_kg       = yield_kg - stored_kg
 
-        # Check storage capacity
-        total_stored = sum(self._storage.values())
-        available = STORAGE_CAPACITY - total_stored
-        if available <= 0:
-            return -0.5, "Storage is full"
+        self._storage[crop] = self._storage.get(crop, 0.0) + stored_kg
 
-        actual_kg = min(harvested_kg, available)
-        self._storage[crop] = self._storage.get(crop, 0.0) + actual_kg
+        # reset plot to empty
+        plot.stage          = "empty"
+        plot.crop_type      = None
+        plot.days_planted   = 0
+        plot.soil_moisture  = 0.5
+        plot.health         = 1.0
+        plot.yield_estimate = 0.0
 
-        # Reset the plot
-        self._plots[action.plot_id] = PlotState(
-            plot_id=action.plot_id,
-            soil_moisture=max(0.0, plot.soil_moisture - 0.1),
+        # reward: proportion of max possible yield achieved
+        max_yield  = SEED_CONFIG[crop]["yield_kg"]
+        proportion = stored_kg / max_yield
+        reward     = proportion * 1.0   # up to +1.0 per harvest
+
+        if lost_kg > 0:
+            reward -= 0.3   # storage overflow penalty
+
+        return round(reward, 4)
+
+    def _handle_sell(self, action: FarmAction) -> float:
+        if action.seed_type is None or action.seed_type not in SEED_CONFIG:
+            return -1.0
+        if action.quantity is None or action.quantity <= 0:
+            return -1.0
+
+        crop = action.seed_type
+        qty  = float(action.quantity)
+
+        if self._storage.get(crop, 0.0) < qty:
+            qty = self._storage.get(crop, 0.0)   # sell whatever is available
+
+        if qty <= 0.0:
+            return -1.0   # nothing to sell
+
+        price   = self._market_prices[crop].sell_price
+        revenue = price * qty
+
+        self._storage[crop] -= qty
+        self._money         += revenue
+
+        # reward scales with revenue relative to base price
+        base_revenue    = SEED_CONFIG[crop]["base_sell"] * qty
+        price_premium   = (revenue - base_revenue) / max(base_revenue, 1.0)
+        reward          = 0.3 + price_premium * 0.5
+        # selling above base price gives up to +0.8, below gives as low as 0.05
+        return round(max(0.05, reward), 4)
+
+    def _handle_wait(self) -> float:
+        return -0.05
+
+    def _daily_passive_reward(self) -> float:
+        reward = 0.0
+        for plot in self._plots:
+            if plot.stage in ("seedling", "growing", "mature"):
+                reward += 0.1 * plot.health   # up to +0.1 per healthy plot per day
+        return round(reward, 4)
+
+    def _post_advance_penalties(self) -> float:
+        penalty = 0.0
+
+        # penalise any plots that just withered
+        for plot in self._plots:
+            if plot.stage == "withered":
+                penalty -= 5.0   # missed harvest window
+
+        # penalise spoilage — check how much was lost
+        # (spoilage is applied inside _advance_day, track via a snapshot)
+        # We use a light proxy: if total storage dropped we don't double-count,
+        # the withered penalty is the main signal here.
+        return round(penalty, 4)
+
+    def _terminal_bonus(self) -> float:
+        cfg          = self._task_config()
+        initial      = cfg["money"]
+
+        # value storage at current market prices
+        storage_value = sum(
+            self._storage[crop] * self._market_prices[crop].sell_price
+            for crop in self._storage
         )
+        net_worth    = self._money + storage_value
+        growth_ratio = net_worth / max(initial, 1.0)
 
-        return 1.0 + actual_kg * 0.1, ""  # reward scales with yield
-
-    def _do_sell(self, action: FarmAction) -> tuple[float, str]:
-        seed_type = action.seed_type
-        if seed_type is None:
-            # Sell all storage
-            total_revenue = 0.0
-            for crop, kg in list(self._storage.items()):
-                if kg > 0 and crop in self._market_prices:
-                    revenue = kg * self._market_prices[crop].sell_price
-                    total_revenue += revenue
-                    self._storage[crop] = 0.0
-            if total_revenue == 0:
-                return -0.5, "Nothing to sell"
-            self._money += total_revenue
-            return total_revenue * 0.05, ""
-        else:
-            if seed_type not in SEED_CONFIG:
-                return -1.0, f"Invalid seed_type: {seed_type}"
-            qty_kg = float(action.quantity) if action.quantity else self._storage.get(seed_type, 0.0)
-            available = self._storage.get(seed_type, 0.0)
-            if available <= 0:
-                return -0.5, f"No {seed_type} in storage"
-            sell_kg = min(qty_kg, available)
-            revenue = sell_kg * self._market_prices[seed_type].sell_price
-            self._storage[seed_type] -= sell_kg
-            self._money += revenue
-            return revenue * 0.05, ""
+        # bonus scales from 0 at break-even to +10 at 3× growth
+        bonus = max(0.0, (growth_ratio - 1.0) * 5.0)
+        return round(min(bonus, 10.0), 4)
 
     # ── market price tick ─────────────────────────────────────────────────
 
