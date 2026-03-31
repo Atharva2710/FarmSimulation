@@ -276,13 +276,15 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             self._water_tank -= IRRIGATION_COST
             return -0.5   # used water but didn't need to
 
-        # good irrigation
-        self._water_tank       -= IRRIGATION_COST
-        plot.soil_moisture      = min(1.0, plot.soil_moisture + 0.3)
+        # check danger BEFORE irrigating so the rescue bonus can actually fire
+        was_critically_low = plot.soil_moisture < 0.25
 
-        # bonus if crop was in danger (moisture was critically low)
-        if plot.soil_moisture < 0.25:
-            return 0.5   # rescued a crop
+        # good irrigation
+        self._water_tank  -= IRRIGATION_COST
+        plot.soil_moisture = min(1.0, plot.soil_moisture + 0.3)
+
+        if was_critically_low:
+            return 0.5   # rescued a crop from critical drought
         return 0.1
 
     def _handle_harvest(self, action: FarmAction) -> float:
@@ -406,10 +408,14 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
     def _post_advance_penalties(self) -> float:
         penalty = 0.0
         for plot in self._plots:
-            if plot.stage == "withered" and plot.plot_id not in self._withered_plots:
-                penalty -= 5.0
-                self._withered_count += 1
-                self._withered_plots.add(plot.plot_id)
+            if plot.stage == "withered":
+                # Use (plot_id, days_planted) as a unique key so that a
+                # re-planted plot that withers again is counted separately.
+                wither_key = (plot.plot_id, plot.days_planted)
+                if wither_key not in self._withered_plots:
+                    penalty -= 5.0
+                    self._withered_count += 1
+                    self._withered_plots.add(wither_key)
         return round(penalty, 4)
 
     def _terminal_bonus(self) -> float:
@@ -625,7 +631,3 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             max_days=self._max_days,
             drought_active=self._drought_active,
         )
-
-
-
-print("phase 2 completed")
