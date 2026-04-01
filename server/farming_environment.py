@@ -141,10 +141,16 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
 
     def step(
         self,
-        action: FarmAction,
-        timeout_s: Optional[float] = None,
-        **kwargs: Any,
+        action: FarmAction | dict[str, Any],
     ) -> FarmObservation:
+        """
+        Takes one action in the environment and advances the world by 1 day.
+        Returns the new observation.
+        """
+        # Ensure action is a FarmAction object (Gradio passes dicts)
+        if isinstance(action, dict):
+            action = FarmAction(**action)
+
         self._step_count += 1
         reward = 0.0
 
