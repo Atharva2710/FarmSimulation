@@ -59,6 +59,16 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         self._sell_events:    list             = []
         self._last_grade:     float            = 0.0
         self._withered_plots: set              = set()
+        
+        # Track last action for dynamic farmer display
+        self._last_action:    str              = "idle"
+        self._ticker_offset:  int              = 0  # For scrolling market ticker
+        
+        # Track dynamic UI elements
+        self._last_money_change: float         = 0.0  # For money trend
+        self._action_message:    str           = ""   # Last action feedback
+        self._last_harvest_amount: float       = 0.0  # For celebration
+        self._prev_money:        float         = 0.0  # Previous money amount
 
         # Auto-initialize so the env works even without explicit reset()
         self.reset()
@@ -160,23 +170,44 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
 
         # dispatch to handler, each returns a float reward delta
         act = action.action_type
+        self._last_action = act  # Track for dynamic farmer display
+        self._ticker_offset = (self._ticker_offset + 1) % 3  # Scroll ticker
+        self._prev_money = self._money  # Track money before action
 
         if act == "buy_seeds":
             reward += self._handle_buy_seeds(action)
+            qty = action.quantity if hasattr(action, 'quantity') else 0
+            seed = action.seed_type if hasattr(action, 'seed_type') else ""
+            self._action_message = f"🛒 Bought {qty} {seed} seeds!"
         elif act == "plant":
             reward += self._handle_plant(action)
+            plot = action.plot_id if hasattr(action, 'plot_id') else 0
+            seed = action.seed_type if hasattr(action, 'seed_type') else ""
+            self._action_message = f"🧑‍🌾 Planted {seed} in Plot {plot}!"
         elif act == "irrigate":
             reward += self._handle_irrigate(action)
+            plot = action.plot_id if hasattr(action, 'plot_id') else 0
+            self._action_message = f"💧 Watered Plot {plot}!"
         elif act == "harvest":
             reward += self._handle_harvest(action)
+            plot = action.plot_id if hasattr(action, 'plot_id') else 0
+            # Check storage to see what was harvested
+            self._action_message = f"🌾 Harvested Plot {plot}! 🎉"
         elif act == "clear":
             reward += self._handle_clear(action)
+            plot = action.plot_id if hasattr(action, 'plot_id') else 0
+            self._action_message = f"🧹 Cleared Plot {plot}"
         elif act == "sell":
             reward += self._handle_sell(action)
+            qty = action.quantity if hasattr(action, 'quantity') else 0
+            seed = action.seed_type if hasattr(action, 'seed_type') else ""
+            self._action_message = f"💰 Sold {qty}kg of {seed}!"
         elif act == "wait":
             reward += self._handle_wait()
+            self._action_message = f"🧘‍♂️ Waiting... Time passes."
         else:
             reward += -1.0   # unknown action penalty
+            self._action_message = f"❓ Unknown action"
 
         # daily passive rewards/penalties before advancing the day
         reward += self._daily_passive_reward()
@@ -221,6 +252,10 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
                 reward += self._terminal_bonus()
 
         self._total_reward += reward
+        
+        # Track money change for dynamic display
+        self._last_money_change = self._money - self._prev_money
+        
         obs = self._build_observation(reward=round(reward, 4), done=done)
         return obs
 
@@ -622,22 +657,84 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         
         water_pct = self._water_tank / WATER_TANK_CAPACITY
         
+        # Dynamic farmer pose
+        farmer_poses = {
+            "idle": "👨‍🌾",
+            "wait": "🧘‍♂️",
+            "buy_seeds": "🛒",
+            "plant": "🧑‍🌾",
+            "irrigate": "💧",
+            "harvest": "🌾",
+            "sell": "💰",
+            "clear": "🧹",
+        }
+        farmer = farmer_poses.get(self._last_action, "👨‍🌾")
+        
+        # Dynamic money display with trend
+        money_trend = ""
+        if self._last_money_change > 50:
+            money_trend = " 🎉"  # Big profit!
+        elif self._last_money_change > 0:
+            money_trend = " ↗️"
+        elif self._last_money_change < -50:
+            money_trend = " ⚠️"  # Big loss!
+        elif self._last_money_change < 0:
+            money_trend = " ↘️"
+        
+        if self._money < 50:
+            money_trend += " 🚨"  # Low funds warning
+        
+        # Dynamic water tank with icons
+        water_icon = "💧🌊" if water_pct > 0.8 else "💧" if water_pct > 0.3 else "🏜️"
+        
+        # Weather effects
+        weather_effect = ""
+        if climate.climate_type == "arid" and self._drought_active:
+            weather_effect = " 🔥"
+        elif climate.climate_type == "tropical" and climate.precipitation > 5:
+            weather_effect = " 💧"
+        elif climate.climate_type == "temperate":
+            weather_effect = " ✨"
+        
         lines = [
-            f"### 🌡️ Day {self._day} / {self._max_days}",
-            f"💰 **Money:** `${self._money:.2f}`",
-            f"💧 **Water Tank:** `{water_pct:.1%}` ({self._water_tank:.1f}L / {WATER_TANK_CAPACITY:.0f}L)",
-            f"🌍 **Climate:** {climate.climate_type.upper()} ({climate.temperature}°C, {climate.humidity:.0%} Hum, {climate.precipitation}mm Rain)",
+            f"### 🌡️ Day {self._day} / {self._max_days}  {farmer}",
+            f"💰 **Money:** `${self._money:.2f}`{money_trend}",
+            f"{water_icon} **Water Tank:** `{water_pct:.1%}` ({self._water_tank:.1f}L / {WATER_TANK_CAPACITY:.0f}L)",
+            f"🌍 **Climate:** {climate.climate_type.upper()}{weather_effect} ({climate.temperature}°C, {climate.humidity:.0%} Hum, {climate.precipitation}mm Rain)",
+        ]
+        
+        # Add action feedback message
+        if self._action_message:
+            lines.append(f"**💬 {self._action_message}**")
+        
+        lines.extend([
             "<hr>",
             "#### 🚜 PLOT STATUS",
-        ]
+        ])
         
         for plot in self._plots:
             if plot.stage == "empty":
-                lines.append(f"  * **Plot {plot.plot_id}:** ⬜ empty")
+                # Show prepared soil if recently cleared
+                plot_icon = "🟫" if self._last_action == "clear" else "⬜"
+                lines.append(f"  * **Plot {plot.plot_id}:** {plot_icon} empty")
             else:
                 seed_cfg = SEED_CONFIG[plot.crop_type]
                 grow_days = int(seed_cfg["grow_days"])
-                status = "**READY TO HARVEST**" if plot.stage == "mature" else f"Growth: {plot.days_planted}/{grow_days} days"
+                
+                # Dynamic plot animations
+                if plot.stage == "mature":
+                    status = "**READY TO HARVEST** ✨"
+                    if self._last_action == "harvest" and hasattr(action, 'plot_id') and action.plot_id == plot.plot_id:
+                        status += " 🎉"
+                elif plot.stage == "withered":
+                    status = "**WITHERED** 💀"
+                else:
+                    status = f"Growth: {plot.days_planted}/{grow_days} days"
+                    # Add animation based on recent action
+                    if self._last_action == "plant" and plot.stage == "seedling":
+                        status += " ✨"
+                    elif self._last_action == "irrigate" and plot.soil_moisture > 0.6:
+                        status += " 💦"
                 
                 lines.append(
                     f"  * **Plot {plot.plot_id}:** {plot.crop_type.upper()} | "
@@ -647,12 +744,25 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         
         lines.append("<hr>")
         
-        # Marketplace
-        prices = " | ".join(
-            f"**{s.upper()}**: ${p.sell_price:.2f} ({'↑' if p.trend > 0.1 else '↓' if p.trend < -0.1 else '-'}{abs(p.trend):.0%})"
-            for s, p in self._market_prices.items()
-        )
-        lines.append(f"📈 **MARKET:** {prices}")
+        # Market mood indicator
+        avg_trend = sum(p.trend for p in self._market_prices.values()) / len(self._market_prices)
+        if avg_trend > 0.1:
+            market_mood = "📈🐂 Bull Market!"
+        elif avg_trend < -0.1:
+            market_mood = "📉🐻 Bear Market"
+        else:
+            market_mood = "📊➡️ Stable"
+        
+        # Scrolling Market ticker
+        market_items = []
+        for s, p in self._market_prices.items():
+            trend = '↑' if p.trend > 0.1 else '↓' if p.trend < -0.1 else '-'
+            market_items.append(f"**{s.upper()}**: ${p.sell_price:.2f} {trend}")
+        
+        # Rotate items for scrolling effect
+        scrolled_items = market_items[self._ticker_offset:] + market_items[:self._ticker_offset]
+        prices = " | ".join(scrolled_items)
+        lines.append(f"📈 **MARKET:** {prices} | {market_mood}")
         
         # Resources
         inv = " | ".join(f"**{s}**: {q}" for s, q in self._seed_inventory.items())
