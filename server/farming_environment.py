@@ -216,7 +216,38 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         obs = self._build_observation(reward=round(reward, 4), done=done)
         return obs
 
-    # ── action handlers ──────────────────────────────────────────────────
+    def get_observation(self) -> FarmObservation:
+        """Returns the current observation WITHOUT taking a step."""
+        return self._build_observation(reward=None, done=self._done)
+
+    def get_metadata(self) -> Dict[str, Any]:
+        """Returns metadata like episode_id and task_id for the UI."""
+        return {
+            "episode_id": self._episode_id,
+            "task_id": self.task_id,
+            "day": self._day,
+            "max_days": self._max_days,
+            "done": self._done,
+            "last_grade": getattr(self, "_last_grade", 0.0),
+        }
+
+    def state(self) -> FarmState:
+        """Returns the full internal state object."""
+        return FarmState(
+            day=self._day,
+            money=self._money,
+            water_tank=self._water_tank,
+            seed_inventory=self._seed_inventory,
+            storage=self._storage,
+            drought_active=self._drought_active,
+            market_prices=self._market_prices,
+            plots=self._plots,
+            total_reward=round(self._total_reward, 4),
+            done=self._done,
+            episode_id=self._episode_id
+        )
+
+    # ── action handlers ─────────────────────────────────────────────────────────
 
     def _handle_buy_seeds(self, action: FarmAction) -> float:
         if action.seed_type is None or action.seed_type not in SEED_CONFIG:
