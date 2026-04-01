@@ -2,16 +2,14 @@
 Farming Environment — Baseline Inference Script
 ================================================
 Mandatory environment variables:
-    API_BASE_URL   The API endpoint for the LLM
-    MODEL_NAME     The model identifier to use for inference
-    HF_TOKEN       Your Hugging Face / API key (also checked as API_KEY)
+    API_BASE_URL   The API endpoint for the LLM.
+    MODEL_NAME     The model identifier to use for inference.
+    HF_TOKEN       Your Hugging Face / API key.
+    LOCAL_IMAGE_NAME The name of the local image to use for the environment if you are using from_docker_image()
 
-Optional:
-    FARMING_ENV_URL   URL of the running farming env server
-                      default: http://localhost:7860
-    FARMING_TASK_ID   Run a single task (1/2/3). Omit to run all 3.
-    MAX_STEPS         Steps per episode (default: 30)
-    EPISODES          Episodes per task (default: 1)
+- Defaults are set only for API_BASE_URL and MODEL_NAME
+- The inference script must be named `inference.py` and placed in the root directory
+- Participants must use OpenAI Client for all LLM calls using above variables
 """
 
 from __future__ import annotations
@@ -19,14 +17,15 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import textwrap
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import requests
 from openai import OpenAI
 
 # ---------------------------------------------------------------------------
-# Config — all driven by environment variables as the checklist requires
+# Config
 # ---------------------------------------------------------------------------
 
 API_BASE_URL      = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
@@ -74,12 +73,30 @@ SYSTEM_PROMPT = textwrap.dedent("""
 """).strip()
 
 # ---------------------------------------------------------------------------
+# Logging Functions
+# ---------------------------------------------------------------------------
+
+def log_start(task: str, env: str, model: str) -> None:
+    print(f"[START] task={task} env={env} model={model}", flush=True)
+
+def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
+    error_val = error if error else "null"
+    done_val = str(done).lower()
+    print(f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}", flush=True)
+
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    print(f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
+
+def diag(msg: str) -> None:
+    print(msg, file=sys.stderr, flush=True)
+
+# ---------------------------------------------------------------------------
 # Environment HTTP client
 # ---------------------------------------------------------------------------
 
 class FarmEnvClient:
     """Thin synchronous HTTP wrapper around the farming environment server."""
-
     def __init__(self, base_url: str) -> None:
         self.base_url = base_url.rstrip("/")
         self._session = requests.Session()
@@ -93,90 +110,55 @@ class FarmEnvClient:
 
     @staticmethod
     def _unwrap(raw: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        openenv-core serializes responses as:
-            {"observation": {...fields...}, "reward": ..., "done": ...}
-        We flatten this into a single dict so downstream code can do
-        obs["day"], obs["money"], obs["done"], obs["reward"] etc.
-        """
         if "observation" in raw:
             flat = dict(raw["observation"])
             flat["reward"] = raw.get("reward")
             flat["done"]   = raw.get("done", False)
             return flat
-        # Already flat (e.g. during local testing without the server)
         return raw
 
     def reset(self, task_id: int = 1) -> Dict[str, Any]:
-        r = self._session.post(
-            f"{self.base_url}/reset",
-            json={},
-            timeout=30,
-        )
+        r = self._session.post(f"{self.base_url}/reset", json={}, timeout=30)
         r.raise_for_status()
         return self._unwrap(r.json())
 
     def step(self, action: Dict[str, Any]) -> Dict[str, Any]:
-        # openenv-core /step expects {"action": {...}}, not the bare dict
-        r = self._session.post(
-            f"{self.base_url}/step",
-            json={"action": action},
-            timeout=30,
-        )
+        r = self._session.post(f"{self.base_url}/step", json={"action": action}, timeout=30)
         r.raise_for_status()
         return self._unwrap(r.json())
 
     def state(self) -> Dict[str, Any]:
         r = self._session.get(f"{self.base_url}/state", timeout=10)
         r.raise_for_status()
-        return r.json()  # state is not wrapped
+        return r.json()
 
 # ---------------------------------------------------------------------------
-# Action parsing — robust, never crashes
+# Action parsing
 # ---------------------------------------------------------------------------
 
 _JSON_OBJECT_RE = re.compile(r"\{[^{}]*\}", re.DOTALL)
 
-
 def parse_action(response_text: str) -> Dict[str, Any]:
-    """
-    Extract the first valid JSON object from the LLM response.
-    Three attempts in order:
-      1. Parse the whole response as JSON
-      2. Find a JSON object anywhere inside the text
-      3. Return FALLBACK_ACTION
-    """
     if not response_text or not response_text.strip():
         return dict(FALLBACK_ACTION)
-
     try:
         return json.loads(response_text.strip())
     except json.JSONDecodeError:
         pass
-
     for match in _JSON_OBJECT_RE.finditer(response_text):
         try:
             return json.loads(match.group(0))
         except json.JSONDecodeError:
             continue
-
-    print(f"    [warn] unparseable LLM response: {response_text!r:.120}")
+    diag(f"    [warn] unparseable LLM response: {response_text!r:.120}")
     return dict(FALLBACK_ACTION)
 
-
 def validate_action(action: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Client-side sanity-check before sending to the server.
-    Returns FALLBACK_ACTION on any violation so the episode never crashes.
-    """
     valid_types = {"wait", "buy_seeds", "plant", "irrigate", "harvest", "sell"}
-
     if not isinstance(action, dict):
         return dict(FALLBACK_ACTION)
-
     if action.get("action_type") not in valid_types:
         return dict(FALLBACK_ACTION)
-
     if "plot_id" in action:
         try:
             action["plot_id"] = int(action["plot_id"])
@@ -184,7 +166,6 @@ def validate_action(action: Dict[str, Any]) -> Dict[str, Any]:
                 return dict(FALLBACK_ACTION)
         except (ValueError, TypeError):
             return dict(FALLBACK_ACTION)
-
     if "quantity" in action:
         try:
             action["quantity"] = int(action["quantity"])
@@ -192,11 +173,9 @@ def validate_action(action: Dict[str, Any]) -> Dict[str, Any]:
                 return dict(FALLBACK_ACTION)
         except (ValueError, TypeError):
             return dict(FALLBACK_ACTION)
-
     if "seed_type" in action:
         if action["seed_type"] not in {"wheat", "rice", "corn"}:
             return dict(FALLBACK_ACTION)
-
     return action
 
 # ---------------------------------------------------------------------------
@@ -210,18 +189,23 @@ def run_episode(
     episode: int,
 ) -> Dict[str, Any]:
 
-    print(f"\n    Episode {episode} | Task {task_id}")
-    print(f"    {'-' * 44}")
+    diag(f"\n    Episode {episode} | Task {task_id}")
+    diag(f"    {'-' * 44}")
 
     obs           = env.reset(task_id=task_id)
     history:      List[str] = []
     total_reward: float     = 0.0
     steps:        int       = 0
+    rewards_list: List[float] = []
+
+    task_name = f"task_{task_id}"
+    benchmark = "farming_env"
+
+    log_start(task=task_name, env=benchmark, model=MODEL_NAME)
 
     for step_num in range(1, MAX_STEPS + 1):
-
         if obs.get("done", False):
-            print(f"    Done at step {step_num - 1}")
+            diag(f"    Done at step {step_num - 1}")
             break
 
         text_summary  = obs.get("text_summary", "No summary available")
@@ -242,6 +226,7 @@ def run_episode(
 
         # ── LLM call ──────────────────────────────────────────────────────
         response_text = ""
+        error_msg: Optional[str] = None
         try:
             completion = llm.chat.completions.create(
                 model=MODEL_NAME,
@@ -254,43 +239,46 @@ def run_episode(
             )
             response_text = completion.choices[0].message.content or ""
         except Exception as exc:
-            print(f"    [error] LLM call failed at step {step_num}: {exc}")
+            error_msg = str(exc)
+            diag(f"    [error] LLM call failed at step {step_num}: {exc}")
 
-        action = validate_action(parse_action(response_text))
+        orig_action = parse_action(response_text)
+        action = validate_action(orig_action)
+        action_str = json.dumps(action)
 
         # ── Env step ──────────────────────────────────────────────────────
         try:
             obs = env.step(action)
         except Exception as exc:
-            print(f"    [error] env.step() failed at step {step_num}: {exc}")
-            break
+            diag(f"    [error] env.step() failed at step {step_num}: {exc}")
+            error_msg = str(exc)
+            obs["done"] = True
+            obs["reward"] = 0.0
 
-        reward        = float(obs.get("reward") or 0.0)
+        reward = float(obs.get("reward") or 0.0)
+        done = obs.get("done", False)
+
         total_reward += reward
-        steps        += 1
+        rewards_list.append(reward)
+        steps += 1
 
-        history.append(
-            f"Step {step_num}: {json.dumps(action)} "
-            f"-> reward={reward:+.3f} money=${obs.get('money', 0):.2f}"
-        )
+        history.append(f"Step {step_num}: {action_str} -> reward={reward:+.3f} money=${obs.get('money', 0):.2f}")
 
-        print(
-            f"    step={step_num:2d} | day={obs.get('day', '?'):2d} | "
-            f"act={action.get('action_type'):<10} | "
-            f"reward={reward:+.3f} | "
-            f"money=${obs.get('money', 0):.2f}"
-        )
+        diag(f"    step={step_num:2d} | day={obs.get('day', '?'):2d} | act={action.get('action_type'):<10} | reward={reward:+.3f} | money=${obs.get('money', 0):.2f}")
+        
+        log_step(step=step_num, action=action_str.replace('"', "'"), reward=reward, done=done, error=error_msg)
+
+        if done:
+            break
 
     # ── Collect final grade from episode metadata ─────────────────────────
     grade       = float(obs.get("metadata", {}).get("grade", 0.0))
     final_money = float(obs.get("money", 0.0))
+    success     = grade >= 0.5
 
-    print(
-        f"\n    result: steps={steps} | "
-        f"total_reward={total_reward:+.3f} | "
-        f"money=${final_money:.2f} | "
-        f"grade={grade:.4f}"
-    )
+    diag(f"\n    result: steps={steps} | total_reward={total_reward:+.3f} | money=${final_money:.2f} | grade={grade:.4f}")
+    
+    log_end(success=success, steps=steps, score=grade, rewards=rewards_list)
 
     return {
         "task_id":      task_id,
@@ -310,21 +298,17 @@ def run_task(
     llm:     OpenAI,
     task_id: int,
 ) -> Dict[str, Any]:
-
     labels = {1: "easy", 2: "medium", 3: "hard"}
-    print(f"\n  {'=' * 48}")
-    print(f"  TASK {task_id} — {labels.get(task_id, '?').upper()}")
-    print(f"  {'=' * 48}")
+    diag(f"\n  {'=' * 48}")
+    diag(f"  TASK {task_id} — {labels.get(task_id, '?').upper()}")
+    diag(f"  {'=' * 48}")
 
-    results = [
-        run_episode(env, llm, task_id, ep)
-        for ep in range(1, EPISODES_PER_TASK + 1)
-    ]
+    results = [run_episode(env, llm, task_id, ep) for ep in range(1, EPISODES_PER_TASK + 1)]
 
     grades = [r["grade"] for r in results]
     avg    = sum(grades) / len(grades)
 
-    print(f"\n  Task {task_id} avg grade: {avg:.4f}")
+    diag(f"\n  Task {task_id} avg grade: {avg:.4f}")
     return {
         "task_id":    task_id,
         "difficulty": labels.get(task_id, "?"),
@@ -337,22 +321,22 @@ def run_task(
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    print("=" * 54)
-    print("  Farming RL Environment — Baseline Inference")
-    print("=" * 54)
-    print(f"  model      : {MODEL_NAME}")
-    print(f"  env url    : {ENV_BASE_URL}")
-    print(f"  max steps  : {MAX_STEPS} per episode")
-    print(f"  episodes   : {EPISODES_PER_TASK} per task")
-    print("=" * 54)
+    diag("=" * 54)
+    diag("  Farming RL Environment — Baseline Inference")
+    diag("=" * 54)
+    diag(f"  model      : {MODEL_NAME}")
+    diag(f"  env url    : {ENV_BASE_URL}")
+    diag(f"  max steps  : {MAX_STEPS} per episode")
+    diag(f"  episodes   : {EPISODES_PER_TASK} per task")
+    diag("=" * 54)
 
     env = FarmEnvClient(ENV_BASE_URL)
     if not env.health():
-        print(f"\n[error] Cannot reach environment server at {ENV_BASE_URL}")
-        print("  Start it with:")
-        print("    cd server && uvicorn app:app --host 0.0.0.0 --port 7860")
+        diag(f"\n[error] Cannot reach environment server at {ENV_BASE_URL}")
+        diag("  Start it with:")
+        diag("    cd server && uvicorn app:app --host 0.0.0.0 --port 7860")
         raise SystemExit(1)
-    print(f"\n  server health : OK")
+    diag(f"\n  server health : OK")
 
     llm = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
@@ -363,18 +347,15 @@ def main() -> None:
 
     task_results = [run_task(env, llm, tid) for tid in task_ids]
 
-    print(f"\n{'=' * 54}")
-    print("  BASELINE SCORES")
-    print(f"{'=' * 54}")
+    diag(f"\n{'=' * 54}")
+    diag("  BASELINE SCORES")
+    diag(f"{'=' * 54}")
     for t in task_results:
-        print(
-            f"  Task {t['task_id']} ({t['difficulty']:<6}) : "
-            f"grade = {t['avg_grade']:.4f}"
-        )
+        diag(f"  Task {t['task_id']} ({t['difficulty']:<6}) : grade = {t['avg_grade']:.4f}")
 
     overall = sum(t["avg_grade"] for t in task_results) / len(task_results)
-    print(f"\n  Overall avg : {overall:.4f}")
-    print(f"{'=' * 54}\n")
+    diag(f"\n  Overall avg : {overall:.4f}")
+    diag(f"{'=' * 54}\n")
 
     output = {
         "model":       MODEL_NAME,
@@ -384,8 +365,7 @@ def main() -> None:
     }
     with open("baseline_results.json", "w") as f:
         json.dump(output, f, indent=2)
-    print("  Saved → baseline_results.json")
-
+    diag("  Saved → baseline_results.json")
 
 if __name__ == "__main__":
     main()
