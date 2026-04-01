@@ -169,6 +169,8 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             reward += self._handle_irrigate(action)
         elif act == "harvest":
             reward += self._handle_harvest(action)
+        elif act == "clear":
+            reward += self._handle_clear(action)
         elif act == "sell":
             reward += self._handle_sell(action)
         elif act == "wait":
@@ -363,6 +365,26 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             reward -= 0.3   # storage overflow penalty
 
         return round(reward, 4)
+
+    def _handle_clear(self, action: FarmAction) -> float:
+        """Clears a withered plot so it can be used again."""
+        if action.plot_id is None or not (0 <= action.plot_id <= 3):
+            return -1.0
+
+        plot = self._plots[action.plot_id]
+
+        if plot.stage != "withered":
+            return -1.0   # can only clear withered crops
+
+        # reset plot
+        plot.stage = "empty"
+        plot.crop_type = None
+        plot.days_planted = 0
+        plot.soil_moisture = 0.5
+        plot.health = 1.0
+        plot.yield_estimate = 0.0
+
+        return 0.0   # neutral action
 
     def _handle_sell(self, action: FarmAction) -> float:
         if action.seed_type is None or action.seed_type not in SEED_CONFIG:
@@ -582,6 +604,9 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
                 actions.append(f"plant(plot_id={plot.plot_id}, seed_type=wheat/rice/corn)")
             elif plot.stage == "mature":
                 actions.append(f"harvest(plot_id={plot.plot_id})")
+            elif plot.stage == "withered":
+                actions.append(f"clear(plot_id={plot.plot_id})")
+
             if plot.stage not in ("empty", "withered") and plot.soil_moisture < 0.7:
                 actions.append(f"irrigate(plot_id={plot.plot_id})")
 
@@ -592,47 +617,54 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         return actions
 
     def _build_text_summary(self) -> str:
+        """Build a clean, high-readability summary for the Dashboard."""
         climate = self._current_climate()
-        lines   = [
-            f"Day {self._day} | Money: ${self._money:.2f} | "
-            f"Climate: {climate.climate_type.upper()} "
-            f"(temp={climate.temperature}°C, humidity={climate.humidity:.0%}, "
-            f"precip={climate.precipitation}mm)",
-            f"Water tank: {self._water_tank / WATER_TANK_CAPACITY:.0%} "
-            f"({self._water_tank:.1f}L / {WATER_TANK_CAPACITY:.0f}L)",
-            "",
-            "PLOTS:",
+        
+        water_pct = self._water_tank / WATER_TANK_CAPACITY
+        
+        lines = [
+            f"### 🌡️ Day {self._day} / {self._max_days}",
+            f"💰 **Money:** `${self._money:.2f}`",
+            f"💧 **Water Tank:** `{water_pct:.1%}` ({self._water_tank:.1f}L / {WATER_TANK_CAPACITY:.0f}L)",
+            f"🌍 **Climate:** {climate.climate_type.upper()} ({climate.temperature}°C, {climate.humidity:.0%} Hum, {climate.precipitation}mm Rain)",
+            "<hr>",
+            "#### 🚜 PLOT STATUS",
         ]
+        
         for plot in self._plots:
             if plot.stage == "empty":
-                lines.append(f"  Plot {plot.plot_id}: empty")
+                lines.append(f"  * **Plot {plot.plot_id}:** ⬜ empty")
             else:
-                seed_cfg  = SEED_CONFIG[plot.crop_type]
+                seed_cfg = SEED_CONFIG[plot.crop_type]
                 grow_days = int(seed_cfg["grow_days"])
-                status    = "READY TO HARVEST" if plot.stage == "mature" else f"day {plot.days_planted}/{grow_days}"
+                status = "**READY TO HARVEST**" if plot.stage == "mature" else f"Growth: {plot.days_planted}/{grow_days} days"
+                
                 lines.append(
-                    f"  Plot {plot.plot_id}: {plot.crop_type.upper()} | "
-                    f"stage={plot.stage} | moisture={plot.soil_moisture:.2f} | "
-                    f"health={plot.health:.2f} | {status}"
+                    f"  * **Plot {plot.plot_id}:** {plot.crop_type.upper()} | "
+                    f"Stage: *{plot.stage}* | Moisture: **{plot.soil_moisture:.2f}** | "
+                    f"Health: **{plot.health:.2f}** | {status}"
                 )
-
-        lines.append("")
-        prices = " ".join(
-            f"{s}=${p.sell_price:.2f}(trend={'up' if p.trend > 0.1 else 'dn' if p.trend < -0.1 else '--'})"
+        
+        lines.append("<hr>")
+        
+        # Marketplace
+        prices = " | ".join(
+            f"**{s.upper()}**: ${p.sell_price:.2f} ({'↑' if p.trend > 0.1 else '↓' if p.trend < -0.1 else '-'}{abs(p.trend):.0%})"
             for s, p in self._market_prices.items()
         )
-        lines.append(f"MARKET SELL PRICES: {prices}")
-
-        inv = " ".join(f"{s}={q}" for s, q in self._seed_inventory.items())
-        lines.append(f"SEED INVENTORY: {inv}")
-
-        store = " ".join(f"{s}={q:.1f}kg" for s, q in self._storage.items())
-        lines.append(f"STORAGE: {store}")
-
+        lines.append(f"📈 **MARKET:** {prices}")
+        
+        # Resources
+        inv = " | ".join(f"**{s}**: {q}" for s, q in self._seed_inventory.items())
+        lines.append(f"🎒 **SEEDS:** {inv}")
+        
+        store = " | ".join(f"**{s}**: {q:.1f}kg" for s, q in self._storage.items())
+        lines.append(f"🌾 **STORAGE:** {store}")
+        
         if self._drought_active:
-            lines.append("WARNING: drought conditions active")
-
-        return "\n".join(lines)
+            lines.append("\n⚠️ **WARNING: DROUGHT ACTIVE**")
+            
+        return "\n\n".join(lines)
 
     def _build_observation(
         self,
