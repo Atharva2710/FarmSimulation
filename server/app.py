@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import os
-import sys
 
 import uvicorn
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
 from openenv.core import create_app
 from farming_environment import FarmingEnvironment
-from models import FarmAction, FarmObservation
+from models import FarmAction, FarmObservation  
 
 
 # Create a singleton environment for HTTP statefulness during development/testing
@@ -29,12 +26,21 @@ def make_env() -> FarmingEnvironment:
     return GLOBAL_ENV
 
 
+import gradio as gr
+from gradio_app import create_gradio_ui
+
 app = create_app(
     env=make_env,
     action_cls=FarmAction,
     observation_cls=FarmObservation,
     env_name="farming-env",
 )
+
+# Mount the interactive Gradio dashboard at the root path.
+# This makes the Space look and feel like a modern application
+# while keeping the /reset, /step, etc. endpoints functional for agents.
+ui = create_gradio_ui(make_env)
+app = gr.mount_gradio_app(app, ui, path="/")
 
 
 def main():

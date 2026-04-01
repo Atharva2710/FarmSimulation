@@ -7,8 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from openenv.core import Environment
 
-import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
 
 from models import (
     CLIMATE_CONFIG, CLIMATE_ROTATION, CLIMATE_ROTATION_DAYS,
@@ -17,7 +16,10 @@ from models import (
     ClimateState, FarmAction, FarmObservation, FarmState, PlotState,
     MarketPrice,
 )
-from server.tasks import EpisodeRecord, grade_episode
+try:
+    from tasks import EpisodeRecord, grade_episode
+except ImportError:
+    from server.tasks import EpisodeRecord, grade_episode
 
 
 # ── Helper functions ─────────────────────────────────────────────────────────
