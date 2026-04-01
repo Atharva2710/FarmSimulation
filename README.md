@@ -4,7 +4,9 @@ emoji: 🌾
 colorFrom: green
 colorTo: yellow
 sdk: docker
+app_port: 7860
 pinned: false
+app_file: server/Dockerfile
 tags:
   - openenv
   - rl
