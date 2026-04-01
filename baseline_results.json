@@ -1,0 +1,52 @@
+{
+  "model": "Qwen/Qwen2.5-72B-Instruct",
+  "env_url": "http://localhost:7860",
+  "tasks": [
+    {
+      "task_id": 1,
+      "difficulty": "easy",
+      "avg_grade": 0.0,
+      "episodes": [
+        {
+          "task_id": 1,
+          "episode": 1,
+          "grade": 0.0,
+          "total_reward": -15.0,
+          "steps": 30,
+          "final_money": 200.0
+        }
+      ]
+    },
+    {
+      "task_id": 2,
+      "difficulty": "medium",
+      "avg_grade": 0.0,
+      "episodes": [
+        {
+          "task_id": 2,
+          "episode": 1,
+          "grade": 0.0,
+          "total_reward": -15.0,
+          "steps": 30,
+          "final_money": 200.0
+        }
+      ]
+    },
+    {
+      "task_id": 3,
+      "difficulty": "hard",
+      "avg_grade": 0.0,
+      "episodes": [
+        {
+          "task_id": 3,
+          "episode": 1,
+          "grade": 0.0,
+          "total_reward": -15.0,
+          "steps": 30,
+          "final_money": 200.0
+        }
+      ]
+    }
+  ],
+  "overall_avg": 0.0
+}
