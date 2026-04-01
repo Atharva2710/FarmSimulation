@@ -37,11 +37,8 @@ EPISODES_PER_TASK = int(os.getenv("EPISODES", "1"))
 TEMPERATURE       = 0.2
 MAX_TOKENS        = 150
 
-FALLBACK_ACTION: Dict[str, Any] = {"action_type": "wait"}
 
-# ---------------------------------------------------------------------------
-# System prompt
-# ---------------------------------------------------------------------------
+FALLBACK_ACTION: Dict[str, Any] = {"action_type": "wait"}
 
 SYSTEM_PROMPT = textwrap.dedent("""
     You are a farming agent controlling a farm simulation.
