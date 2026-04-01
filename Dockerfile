@@ -6,7 +6,7 @@ COPY server/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY models.py .
-COPY server/ ./
+COPY server ./server
 
 EXPOSE 7860
 
