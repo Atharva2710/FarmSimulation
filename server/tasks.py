@@ -106,7 +106,7 @@ def grade_task3(record: EpisodeRecord) -> float:
 
     # resilience component — fraction of days where at least 2 plots stayed healthy
     if record.max_days > 0:
-        resilience_score = min(1.0, record.healthy_days / (record.max_days * 2))
+        resilience_score = min(1.0, record.healthy_days / record.max_days)
     else:
         resilience_score = 0.0
 

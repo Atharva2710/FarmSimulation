@@ -83,7 +83,7 @@ CLIMATE_ROTATION_DAYS: int  = 10
 
 WATER_TANK_CAPACITY: float  = 100.0   # litres, logical max
 WATER_TANK_INITIAL:  float  = 0.8     # fraction full at episode start
-IRRIGATION_COST:     float  = 2.0     # litres per irrigate action
+IRRIGATION_COST:     float  = 15.0    # litres per irrigate action
 STORAGE_CAPACITY:    float  = 200.0   # kg max total across all crops
 HARVEST_WINDOW_DAYS: int    = 3       # days after mature before withering
 

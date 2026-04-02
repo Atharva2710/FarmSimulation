@@ -1,6 +1,6 @@
 {
   "model": "Qwen/Qwen2.5-72B-Instruct",
-  "env_url": "https://Athric-TESTSRE.hf.space",
+  "env_url": "http://localhost:7860",
   "tasks": [
     {
       "task_id": 1,
@@ -11,9 +11,9 @@
           "task_id": 1,
           "episode": 1,
           "grade": 0.0,
-          "total_reward": 1.8,
-          "steps": 5,
-          "final_money": 180.0
+          "total_reward": -15.0,
+          "steps": 30,
+          "final_money": 200.0
         }
       ]
     },
@@ -26,9 +26,9 @@
           "task_id": 2,
           "episode": 1,
           "grade": 0.0,
-          "total_reward": 1.8,
-          "steps": 5,
-          "final_money": 180.0
+          "total_reward": -15.0,
+          "steps": 30,
+          "final_money": 150.0
         }
       ]
     },
@@ -41,9 +41,9 @@
           "task_id": 3,
           "episode": 1,
           "grade": 0.0,
-          "total_reward": 1.8,
-          "steps": 5,
-          "final_money": 180.0
+          "total_reward": -15.0,
+          "steps": 30,
+          "final_money": 100.0
         }
       ]
     }

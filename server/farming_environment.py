@@ -111,11 +111,15 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         self,
         seed: Optional[int] = None,
         episode_id: Optional[str] = None,
+        task_id: Optional[int] = None,
         **kwargs: Any,
     ) -> FarmObservation:
 
         if seed is not None:
             random.seed(seed)
+            
+        if task_id is not None:
+            self.task_id = int(task_id)
 
         cfg = self._task_config()
 
@@ -157,6 +161,9 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         Takes one action in the environment and advances the world by 1 day.
         Returns the new observation.
         """
+        if self._done:
+            return self._build_observation(reward=0.0, done=True)
+            
         # Ensure action is a FarmAction object (Gradio passes dicts)
         if isinstance(action, dict):
             action = FarmAction(**action)
@@ -175,33 +182,56 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         self._prev_money = self._money  # Track money before action
 
         if act == "buy_seeds":
-            reward += self._handle_buy_seeds(action)
-            qty = action.quantity if hasattr(action, 'quantity') else 0
-            seed = action.seed_type if hasattr(action, 'seed_type') else ""
-            self._action_message = f"🛒 Bought {qty} {seed} seeds!"
+            reward_change = self._handle_buy_seeds(action)
+            reward += reward_change
+            qty = getattr(action, 'quantity', 0) or 0
+            seed = getattr(action, 'seed_type', "") or ""
+            if reward_change < 0:
+                self._action_message = f"❌ Failed to buy seeds!"
+            else:
+                self._action_message = f"🛒 Bought {qty} {seed} seeds!"
         elif act == "plant":
-            reward += self._handle_plant(action)
-            plot = action.plot_id if hasattr(action, 'plot_id') else 0
-            seed = action.seed_type if hasattr(action, 'seed_type') else ""
-            self._action_message = f"🧑‍🌾 Planted {seed} in Plot {plot}!"
+            reward_change = self._handle_plant(action)
+            reward += reward_change
+            plot = getattr(action, 'plot_id', 0) or 0
+            seed = getattr(action, 'seed_type', "") or ""
+            if reward_change < 0:
+                self._action_message = f"❌ Failed to plant Plot {plot}!"
+            else:
+                self._action_message = f"🧑‍🌾 Planted {seed} in Plot {plot}!"
         elif act == "irrigate":
-            reward += self._handle_irrigate(action)
-            plot = action.plot_id if hasattr(action, 'plot_id') else 0
-            self._action_message = f"💧 Watered Plot {plot}!"
+            reward_change = self._handle_irrigate(action)
+            reward += reward_change
+            plot = getattr(action, 'plot_id', 0) or 0
+            if reward_change == -1.0:
+                self._action_message = f"❌ Failed to water Plot {plot}!"
+            else:
+                self._action_message = f"💧 Watered Plot {plot}!"
         elif act == "harvest":
-            reward += self._handle_harvest(action)
-            plot = action.plot_id if hasattr(action, 'plot_id') else 0
-            # Check storage to see what was harvested
-            self._action_message = f"🌾 Harvested Plot {plot}! 🎉"
+            reward_change = self._handle_harvest(action)
+            reward += reward_change
+            plot = getattr(action, 'plot_id', 0) or 0
+            if reward_change < 0:
+                self._action_message = f"❌ Failed to harvest Plot {plot}!"
+            else:
+                self._action_message = f"🌾 Harvested Plot {plot}! 🎉"
         elif act == "clear":
-            reward += self._handle_clear(action)
-            plot = action.plot_id if hasattr(action, 'plot_id') else 0
-            self._action_message = f"🧹 Cleared Plot {plot}"
+            reward_change = self._handle_clear(action)
+            reward += reward_change
+            plot = getattr(action, 'plot_id', 0) or 0
+            if reward_change < 0:
+                self._action_message = f"❌ Failed to clear Plot {plot}!"
+            else:
+                self._action_message = f"🧹 Cleared Plot {plot}"
         elif act == "sell":
-            reward += self._handle_sell(action)
-            qty = action.quantity if hasattr(action, 'quantity') else 0
-            seed = action.seed_type if hasattr(action, 'seed_type') else ""
-            self._action_message = f"💰 Sold {qty}kg of {seed}!"
+            reward_change = self._handle_sell(action)
+            reward += reward_change
+            qty = getattr(action, 'quantity', 0) or 0
+            seed = getattr(action, 'seed_type', "") or ""
+            if reward_change < 0:
+                self._action_message = f"❌ Failed to sell {seed}!"
+            else:
+                self._action_message = f"💰 Sold {qty}kg of {seed}!"
         elif act == "wait":
             reward += self._handle_wait()
             self._action_message = f"🧘‍♂️ Waiting... Time passes."
@@ -568,7 +598,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         cfg     = CLIMATE_CONFIG[climate.climate_type]
 
         # 1. refill water tank from precipitation
-        precip_litres    = climate.precipitation * 10   # mm → litres (assume 10L per mm)
+        precip_litres    = climate.precipitation * 2   # mm → litres
         self._water_tank = min(
             WATER_TANK_CAPACITY,
             self._water_tank + precip_litres,
@@ -595,7 +625,8 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
                 plot.health = max(0.0, plot.health - 0.1)
 
             # advance growth counter
-            plot.days_planted += 1
+            if plot.stage != "withered":
+                plot.days_planted += 1
 
             seed_cfg  = SEED_CONFIG[plot.crop_type]
             grow_days = int(seed_cfg["grow_days"])

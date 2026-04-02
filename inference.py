@@ -115,7 +115,7 @@ class FarmEnvClient:
         return raw
 
     def reset(self, task_id: int = 1) -> Dict[str, Any]:
-        r = self._session.post(f"{self.base_url}/reset", json={}, timeout=30)
+        r = self._session.post(f"{self.base_url}/reset", json={"task_id": task_id}, timeout=30)
         r.raise_for_status()
         return self._unwrap(r.json())
 

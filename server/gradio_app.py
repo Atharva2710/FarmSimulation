@@ -88,7 +88,7 @@ def create_gradio_ui(env_factory):
             os.environ["FARMING_TASK_ID"] = str(int(tid))
             # Force recreation of the environment if we are changing task_id
             # In a real singleton this might need adjustment, but here reset handles it.
-            env.reset()
+            env.reset(task_id=int(tid))
             return get_status()
 
         def handle_action(action_type, p_id, qty, s_type):
