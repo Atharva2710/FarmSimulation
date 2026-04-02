@@ -260,6 +260,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         done = self._day >= self._max_days or self._money <= 0.0
 
         if done:
+            self._done = True  # Persist done state to prevent further steps
             storage_value = sum(
                 self._storage[crop] * self._market_prices[crop].sell_price
                 for crop in self._storage
@@ -403,7 +404,9 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             return -1.0   # nothing to harvest
 
         crop      = plot.crop_type
-        yield_kg  = plot.yield_estimate   # already health-adjusted
+        # Recalculate yield based on CURRENT health (not old yield_estimate)
+        max_yield = SEED_CONFIG[crop]["yield_kg"]
+        yield_kg  = max_yield * plot.health
 
         # check storage capacity
         current_total = sum(self._storage.values())
@@ -755,8 +758,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
                 # Dynamic plot animations
                 if plot.stage == "mature":
                     status = "**READY TO HARVEST** ✨"
-                    if self._last_action == "harvest" and hasattr(action, 'plot_id') and action.plot_id == plot.plot_id:
-                        status += " 🎉"
+                    # Note: Can't check which specific plot was just harvested without tracking it
                 elif plot.stage == "withered":
                     status = "**WITHERED** 💀"
                 else:
