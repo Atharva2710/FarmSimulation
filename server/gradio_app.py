@@ -186,6 +186,617 @@ button.gr-button:active {
 }
 """
 
+SHARED_BANNER_HTML = """
+<div id="fs-shared-banner">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500&family=DM+Mono:wght@400;500&display=swap');
+#fs-shared-banner {
+  position: relative;
+  overflow: hidden;
+  padding: 52px 48px 44px;
+  text-align: center;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  background:
+    linear-gradient(180deg, rgba(34,197,94,0.07) 0%, transparent 100%),
+    radial-gradient(ellipse 70% 60% at 50% 0%, rgba(34,197,94,0.12) 0%, transparent 70%);
+  font-family: 'DM Sans', 'Outfit', sans-serif;
+}
+.fsb-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 16px; border-radius: 100px;
+  background: rgba(34,197,94,0.12);
+  border: 1px solid rgba(34,197,94,0.25);
+  color: #22c55e;
+  font-family: 'DM Mono', monospace;
+  font-size: 0.72rem; letter-spacing: 1.2px;
+  text-transform: uppercase; margin-bottom: 20px;
+}
+.fsb-dot {
+  width: 6px; height: 6px; background: #22c55e; border-radius: 50%;
+  animation: fsb-pulse 2s ease-in-out infinite; display: inline-block;
+}
+@keyframes fsb-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(1.5)} }
+#fs-shared-banner h1 {
+  font-family: 'Syne', 'Outfit', sans-serif !important;
+  font-size: clamp(2.2rem, 4vw, 4rem) !important;
+  font-weight: 800 !important;
+  line-height: 1.05 !important;
+  margin-bottom: 14px !important;
+  color: #fff !important;
+  letter-spacing: -2px !important;
+  background: none !important;
+  -webkit-text-fill-color: #fff !important;
+  text-align: center !important;
+}
+#fs-shared-banner h1 span { color: #22c55e; -webkit-text-fill-color: #22c55e !important; }
+.fsb-sub {
+  font-size: 1rem;
+  color: #7a8f82;
+  max-width: 580px;
+  margin: 0 auto 24px;
+  text-align: center;
+  line-height: 1.65;
+  font-family: 'DM Sans', 'Outfit', sans-serif;
+}
+.fsb-pills {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
+}
+.fsb-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 14px; border-radius: 100px;
+  font-family: 'DM Mono', monospace;
+  font-size: 0.7rem; font-weight: 500; border: 1px solid;
+}
+.fsb-pill-g { background: rgba(34,197,94,0.1); border-color: rgba(34,197,94,0.28); color: #22c55e; }
+.fsb-pill-a { background: rgba(245,158,11,0.1); border-color: rgba(245,158,11,0.28); color: #f59e0b; }
+.fsb-pill-b { background: rgba(56,189,248,0.1); border-color: rgba(56,189,248,0.28); color: #38bdf8; }
+.fsb-pill-p { background: rgba(167,139,250,0.1); border-color: rgba(167,139,250,0.28); color: #a78bfa; }
+</style>
+<div class="fsb-badge"><span class="fsb-dot"></span>&nbsp;OpenEnv &middot; v1.0.0 &middot; Meta Hackathon 2025</div>
+<h1>&#127807; Farm<span>Simulation</span></h1>
+<p class="fsb-sub">A physics-grounded Reinforcement Learning environment where AI agents master agricultural resource management, market timing, and drought survival.</p>
+<div class="fsb-pills">
+  <span class="fsb-pill fsb-pill-g">&#128013; Python &ge; 3.11</span>
+  <span class="fsb-pill fsb-pill-a">&#9889; FastAPI + Uvicorn</span>
+  <span class="fsb-pill fsb-pill-b">&#129303; HuggingFace Space</span>
+  <span class="fsb-pill fsb-pill-p">&#128721; OpenEnv Core</span>
+  <span class="fsb-pill fsb-pill-g">&#128051; Docker Ready</span>
+</div>
+</div>
+"""
+
+DOCS_HTML = """
+<div id="fs-docs">
+<style>
+#fs-docs {
+  font-family: 'DM Sans', 'Outfit', sans-serif;
+  background: #080b0a;
+  color: #e2e8e4;
+  min-height: 100vh;
+  line-height: 1.7;
+}
+#fs-docs * { box-sizing: border-box; }
+
+/* Reset Gradio interference */
+#fs-docs h1,#fs-docs h2,#fs-docs h3,#fs-docs h4 {
+  background: none !important;
+  -webkit-text-fill-color: unset !important;
+  background-clip: unset !important;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+/* ── Banner ── */
+.fs-banner {
+  position: relative;
+  overflow: hidden;
+  padding: 72px 48px 64px;
+  text-align: center;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  background:
+    linear-gradient(180deg, rgba(34,197,94,0.07) 0%, transparent 100%),
+    radial-gradient(ellipse 70% 60% at 50% 0%, rgba(34,197,94,0.13) 0%, transparent 70%);
+  margin-bottom: 0;
+}
+.fs-banner-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 16px; border-radius: 100px;
+  background: rgba(34,197,94,0.12);
+  border: 1px solid rgba(34,197,94,0.25);
+  color: #22c55e;
+  font-family: 'DM Mono', monospace;
+  font-size: 0.72rem; letter-spacing: 1.2px;
+  text-transform: uppercase; margin-bottom: 26px;
+}
+.fs-banner-dot { width: 6px; height: 6px; background: #22c55e; border-radius: 50%;
+  animation: fs-pulse 2s ease-in-out infinite; display: inline-block; }
+@keyframes fs-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(1.5)} }
+.fs-banner h1 {
+  font-family: 'Syne', 'Outfit', sans-serif !important;
+  font-size: clamp(2.6rem, 5vw, 4.8rem) !important;
+  font-weight: 800 !important;
+  line-height: 1.05 !important;
+  margin-bottom: 18px !important;
+  color: #fff !important;
+  letter-spacing: -2px !important;
+}
+.fs-banner h1 span { color: #22c55e; }
+.fs-banner-sub {
+  font-size: 1rem; color: #7a8f82;
+  max-width: 600px; margin: 0 auto 30px;
+}
+.fs-pills { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-bottom: 36px; }
+.fs-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 14px; border-radius: 100px;
+  font-family: 'DM Mono', monospace;
+  font-size: 0.7rem; font-weight: 500; border: 1px solid;
+}
+.fs-pill-g { background: rgba(34,197,94,0.1); border-color: rgba(34,197,94,0.28); color: #22c55e; }
+.fs-pill-a { background: rgba(245,158,11,0.1); border-color: rgba(245,158,11,0.28); color: #f59e0b; }
+.fs-pill-b { background: rgba(56,189,248,0.1); border-color: rgba(56,189,248,0.28); color: #38bdf8; }
+.fs-pill-p { background: rgba(167,139,250,0.1); border-color: rgba(167,139,250,0.28); color: #a78bfa; }
+
+/* ── Layout ── */
+.fs-layout { display: grid; grid-template-columns: 240px 1fr; min-height: 80vh; }
+.fs-sidebar {
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  padding: 32px 16px;
+  border-right: 1px solid rgba(255,255,255,0.07);
+  background: rgba(8,11,10,0.95);
+  backdrop-filter: blur(12px);
+}
+.fs-sidebar::-webkit-scrollbar { width: 3px; }
+.fs-sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
+.fs-logo { font-family: 'Syne','Outfit',sans-serif; font-weight: 800; font-size: 0.95rem; color: #22c55e; margin-bottom: 28px; display: block; }
+.fs-nav-section { margin-bottom: 24px; }
+.fs-nav-label { font-family: 'DM Mono',monospace; font-size: 0.62rem; letter-spacing: 1.5px; text-transform: uppercase; color: #2d3d32; margin-bottom: 8px; padding: 0 8px; }
+.fs-nav-link {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; border-radius: 8px;
+  font-size: 0.85rem; color: #7a8f82;
+  text-decoration: none; transition: all 0.18s ease;
+  cursor: pointer;
+}
+.fs-nav-link:hover { background: rgba(34,197,94,0.1); color: #22c55e; }
+
+/* ── Main ── */
+.fs-main { padding: 48px 56px; max-width: 900px; }
+.fs-section { margin-bottom: 72px; scroll-margin-top: 32px; }
+.fs-tag { display: inline-block; font-family: 'DM Mono',monospace; font-size: 0.67rem; color: #22c55e; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 10px; }
+.fs-section h2 { font-family: 'Syne','Outfit',sans-serif !important; font-size: 1.9rem !important; color: #fff !important; margin-bottom: 6px !important; }
+.fs-section h3 { font-family: 'Syne','Outfit',sans-serif !important; font-size: 1.1rem !important; color: #22c55e !important; margin: 28px 0 14px !important; }
+.fs-lead { font-size: 0.95rem; color: #7a8f82; margin-bottom: 28px; border-left: 2px solid #22c55e; padding-left: 14px; max-width: 640px; }
+.fs-p { color: #7a8f82; margin-bottom: 14px; font-size: 0.9rem; }
+
+/* ── Cards ── */
+.fs-card-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; margin: 24px 0; }
+.fs-stat-card {
+  background: rgba(14,20,16,0.85); border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 14px; padding: 22px;
+  transition: border-color 0.2s;
+}
+.fs-stat-card:hover { border-color: rgba(34,197,94,0.3); }
+.fs-stat-label { font-family: 'DM Mono',monospace; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 1px; color: #2d3d32; margin-bottom: 8px; }
+.fs-stat-value { font-family: 'Syne','Outfit',sans-serif; font-size: 2rem; font-weight: 800; margin-bottom: 6px; }
+.fs-stat-desc { font-size: 0.8rem; color: #7a8f82; }
+
+/* ── Tables ── */
+.fs-table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid rgba(255,255,255,0.07); margin: 22px 0; }
+#fs-docs table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+#fs-docs thead tr { background: rgba(34,197,94,0.05); border-bottom: 1px solid rgba(255,255,255,0.07); }
+#fs-docs th { padding: 13px 16px; text-align: left; font-family: 'DM Mono',monospace; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 1px; color: #2d3d32; font-weight: 500; border: none !important; background: none !important; }
+#fs-docs td { padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.04); color: #7a8f82; vertical-align: top; border: none !important; border-bottom: 1px solid rgba(255,255,255,0.04) !important; background: none !important; }
+#fs-docs td:first-child { font-family: 'DM Mono',monospace; color: #22c55e; font-size: 0.8rem; }
+#fs-docs tbody tr:last-child td { border-bottom: none !important; }
+#fs-docs tbody tr:hover td { background: rgba(34,197,94,0.04) !important; }
+
+/* ── Code ── */
+.fs-pre {
+  background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 12px; padding: 22px;
+  overflow-x: auto;
+  font-family: 'DM Mono',monospace;
+  font-size: 0.8rem; line-height: 1.8;
+  margin: 18px 0; position: relative;
+  color: #e2e8e4;
+}
+.fs-code {
+  font-family: 'DM Mono',monospace;
+  font-size: 0.8rem; color: #86efac;
+  background: rgba(34,197,94,0.08);
+  padding: 2px 6px; border-radius: 4px;
+}
+.fs-kw { color: #f472b6; } .fs-fn { color: #60a5fa; } .fs-str { color: #a3e3b8; }
+.fs-num { color: #f59e0b; } .fs-cmt { color: #2d3d32; font-style: italic; } .fs-var { color: #c4b5fd; }
+
+/* ── Task Cards ── */
+.fs-task-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; }
+.fs-task {
+  padding: 24px; border-radius: 14px;
+  border: 1px solid; position: relative; overflow: hidden;
+}
+.fs-task-num { font-family:'DM Mono',monospace; font-size:0.65rem; opacity:0.45; margin-bottom:10px; }
+.fs-task h4 { font-family:'Syne','Outfit',sans-serif !important; font-size:1rem !important; color:#fff !important; margin-bottom:8px !important; }
+.fs-task .fs-meta { font-size:0.78rem; color:#7a8f82; margin-bottom:10px; }
+.fs-task .fs-challenge { font-size:0.83rem; color:#e2e8e4; }
+.fs-task-easy { background:rgba(34,197,94,0.05); border-color:rgba(34,197,94,0.2); }
+.fs-task-med  { background:rgba(245,158,11,0.05); border-color:rgba(245,158,11,0.2); }
+.fs-task-hard { background:rgba(248,113,113,0.05); border-color:rgba(248,113,113,0.2); }
+
+/* ── Endpoints ── */
+.fs-endpoint {
+  display:flex; align-items:flex-start; gap:14px;
+  padding:16px 20px; border-radius:8px;
+  background:rgba(14,20,16,0.85);
+  border:1px solid rgba(255,255,255,0.07);
+  margin-bottom:10px; transition:border-color 0.2s;
+}
+.fs-endpoint:hover { border-color:rgba(34,197,94,0.3); }
+.fs-method {
+  font-family:'DM Mono',monospace; font-size:0.7rem; font-weight:600;
+  padding:4px 10px; border-radius:5px; min-width:50px; text-align:center;
+}
+.fs-get  { background:rgba(56,189,248,0.1); color:#38bdf8; }
+.fs-post { background:rgba(34,197,94,0.1); color:#22c55e; }
+.fs-endpoint-path { font-family:'DM Mono',monospace; font-size:0.85rem; color:#fff; margin-bottom:3px; }
+.fs-endpoint-desc { font-size:0.8rem; color:#7a8f82; }
+
+/* ── Alert ── */
+.fs-alert {
+  display:flex; gap:12px; padding:14px 18px;
+  border-radius:8px; margin:18px 0;
+  border:1px solid; font-size:0.85rem;
+}
+.fs-alert-warn { background:rgba(245,158,11,0.07); border-color:rgba(245,158,11,0.25); }
+.fs-alert-warn strong { color:#f59e0b; }
+.fs-alert-info { background:rgba(56,189,248,0.07); border-color:rgba(56,189,248,0.25); }
+.fs-alert-info strong { color:#38bdf8; }
+
+/* ── Reward ── */
+.fs-pos { color:#22c55e; font-weight:600; }
+.fs-neg { color:#f87171; font-weight:600; }
+
+/* ── Divider ── */
+.fs-div { height:1px; background:rgba(255,255,255,0.06); margin:56px 0; }
+
+/* ── Footer ── */
+.fs-footer { text-align:center; padding:40px 48px; border-top:1px solid rgba(255,255,255,0.06); font-size:0.8rem; color:#2d3d32; }
+.fs-footer a { color:#22c55e; text-decoration:none; }
+
+@media (max-width: 860px) {
+  .fs-layout { grid-template-columns: 1fr; }
+  .fs-sidebar { display: none; }
+  .fs-main { padding: 28px 18px; }
+  .fs-card-grid, .fs-task-grid { grid-template-columns: 1fr; }
+  .fs-banner { padding: 52px 20px 44px; }
+}
+</style>
+
+<!-- LAYOUT -->
+<div class="fs-layout">
+
+  <!-- SIDEBAR -->
+  <nav class="fs-sidebar">
+    <span class="fs-logo">&#127807; FarmSim Docs</span>
+    <div class="fs-nav-section">
+      <div class="fs-nav-label">Getting Started</div>
+      <div class="fs-nav-link" onclick="document.getElementById('fs-overview').scrollIntoView({behavior:'smooth'})">&#128161; Overview</div>
+      <div class="fs-nav-link" onclick="document.getElementById('fs-quickstart').scrollIntoView({behavior:'smooth'})">&#128640; Quick Start</div>
+      <div class="fs-nav-link" onclick="document.getElementById('fs-docker').scrollIntoView({behavior:'smooth'})">&#128051; Docker</div>
+    </div>
+    <div class="fs-nav-section">
+      <div class="fs-nav-label">Environment</div>
+      <div class="fs-nav-link" onclick="document.getElementById('fs-spec').scrollIntoView({behavior:'smooth'})">&#9881; Env Specification</div>
+      <div class="fs-nav-link" onclick="document.getElementById('fs-actions').scrollIntoView({behavior:'smooth'})">&#127918; Action Space</div>
+      <div class="fs-nav-link" onclick="document.getElementById('fs-obs').scrollIntoView({behavior:'smooth'})">&#128065; Observation Space</div>
+      <div class="fs-nav-link" onclick="document.getElementById('fs-physics').scrollIntoView({behavior:'smooth'})">&#129518; Physics Engine</div>
+    </div>
+    <div class="fs-nav-section">
+      <div class="fs-nav-label">Crops &amp; Market</div>
+      <div class="fs-nav-link" onclick="document.getElementById('fs-crops').scrollIntoView({behavior:'smooth'})">&#127807; Crop Reference</div>
+      <div class="fs-nav-link" onclick="document.getElementById('fs-climate').scrollIntoView({behavior:'smooth'})">&#127782; Climate System</div>
+      <div class="fs-nav-link" onclick="document.getElementById('fs-market').scrollIntoView({behavior:'smooth'})">&#128200; Market Dynamics</div>
+    </div>
+    <div class="fs-nav-section">
+      <div class="fs-nav-label">Tasks &amp; Scoring</div>
+      <div class="fs-nav-link" onclick="document.getElementById('fs-tasks').scrollIntoView({behavior:'smooth'})">&#127919; Curriculum Tasks</div>
+      <div class="fs-nav-link" onclick="document.getElementById('fs-grading').scrollIntoView({behavior:'smooth'})">&#127942; Grading Formulas</div>
+      <div class="fs-nav-link" onclick="document.getElementById('fs-rewards').scrollIntoView({behavior:'smooth'})">&#127873; Reward Shaping</div>
+    </div>
+    <div class="fs-nav-section">
+      <div class="fs-nav-label">Agent &amp; API</div>
+      <div class="fs-nav-link" onclick="document.getElementById('fs-agent').scrollIntoView({behavior:'smooth'})">&#129504; LLM Agent Loop</div>
+      <div class="fs-nav-link" onclick="document.getElementById('fs-api').scrollIntoView({behavior:'smooth'})">&#128225; API Reference</div>
+      <div class="fs-nav-link" onclick="document.getElementById('fs-structure').scrollIntoView({behavior:'smooth'})">&#128193; File Structure</div>
+    </div>
+  </nav>
+
+  <!-- MAIN -->
+  <main class="fs-main">
+
+    <!-- OVERVIEW -->
+    <section class="fs-section" id="fs-overview">
+      <div class="fs-tag">// overview</div>
+      <h2>What is FarmSimulation?</h2>
+      <p class="fs-lead">Real farmers balance scarce capital against volatile markets, fight pests and drought, and time harvests for peak prices &mdash; miss one irrigation in an arid climate and a week of growth dies overnight.</p>
+      <p class="fs-p">FarmSimulation is an <strong>OpenEnv-compatible Reinforcement Learning environment</strong> that makes agents solve the Agricultural Resource Management problem &mdash; simulating the full crop lifecycle, market economics, and environmental hazards that any autonomous farming agent must navigate to turn a profit.</p>
+      <div class="fs-card-grid">
+        <div class="fs-stat-card"><div class="fs-stat-label">Land Plots</div><div class="fs-stat-value" style="color:#22c55e">4</div><div class="fs-stat-desc">Independent plots with unique soil states</div></div>
+        <div class="fs-stat-card"><div class="fs-stat-label">Valid Actions</div><div class="fs-stat-value" style="color:#f59e0b">11</div><div class="fs-stat-desc">From planting to market selling</div></div>
+        <div class="fs-stat-card"><div class="fs-stat-label">Crop Varieties</div><div class="fs-stat-value" style="color:#38bdf8">3</div><div class="fs-stat-desc">Wheat &middot; Rice &middot; Corn</div></div>
+      </div>
+    </section>
+
+    <div class="fs-div"></div>
+
+    <!-- QUICKSTART -->
+    <section class="fs-section" id="fs-quickstart">
+      <div class="fs-tag">// getting started</div>
+      <h2>Quick Start</h2>
+      <p class="fs-lead">Get your local dev server running in under 2 minutes.</p>
+      <h3>1. Install &amp; Run Locally</h3>
+      <pre class="fs-pre"><span class="fs-cmt"># Install dependencies (uv-compatible)</span>
+pip install -e .
+
+<span class="fs-cmt"># Start the environment server + Gradio UI</span>
+uvicorn server.app:app --host 0.0.0.0 --port 7860
+
+<span class="fs-cmt"># Open the interactive dashboard</span>
+open http://localhost:7860</pre>
+      <h3>2. Run the LLM Agent</h3>
+      <pre class="fs-pre"><span class="fs-kw">export</span> <span class="fs-var">HF_TOKEN</span>=<span class="fs-str">"hf_your_token_here"</span>
+<span class="fs-kw">export</span> <span class="fs-var">MODEL_NAME</span>=<span class="fs-str">"Qwen/Qwen2.5-72B-Instruct"</span>
+<span class="fs-kw">export</span> <span class="fs-var">FARMING_ENV_URL</span>=<span class="fs-str">"http://localhost:7860"</span>
+<span class="fs-kw">export</span> <span class="fs-var">MAX_STEPS</span>=<span class="fs-num">60</span>
+
+python inference.py
+<span class="fs-cmt"># &rarr; saves baseline_results.json</span></pre>
+      <h3>3. Select Task Difficulty</h3>
+      <pre class="fs-pre"><span class="fs-kw">export</span> <span class="fs-var">FARMING_TASK_ID</span>=<span class="fs-num">3</span>   <span class="fs-cmt"># 1=easy &nbsp; 2=medium &nbsp; 3=hard</span>
+python inference.py</pre>
+    </section>
+
+    <div class="fs-div"></div>
+
+    <!-- DOCKER -->
+    <section class="fs-section" id="fs-docker">
+      <div class="fs-tag">// deployment</div>
+      <h2>Docker</h2>
+      <pre class="fs-pre"><span class="fs-cmt"># Build the image</span>
+docker build -t farming-sim .
+
+<span class="fs-cmt"># Run with your HF token</span>
+docker run -p <span class="fs-num">7860</span>:<span class="fs-num">7860</span> -e <span class="fs-var">HF_TOKEN</span>=hf_xxx farming-sim</pre>
+      <p class="fs-p">The Dockerfile uses <span class="fs-code">python:3.11-slim</span> and exposes port <span class="fs-code">7860</span>. Compatible with Hugging Face Spaces &mdash; set <span class="fs-code">HF_TOKEN</span> via Space secrets.</p>
+    </section>
+
+    <div class="fs-div"></div>
+
+    <!-- SPEC -->
+    <section class="fs-section" id="fs-spec">
+      <div class="fs-tag">// environment</div>
+      <h2>Environment Specification</h2>
+      <div class="fs-table-wrap"><table><thead><tr><th>Property</th><th>Value</th></tr></thead><tbody>
+        <tr><td>Name</td><td><span class="fs-code">farming-env</span></td></tr>
+        <tr><td>Version</td><td>1.0.0</td></tr>
+        <tr><td>Framework</td><td>OpenEnv Core</td></tr>
+        <tr><td>Runtime</td><td>FastAPI + Uvicorn + Gradio</td></tr>
+        <tr><td>Protocol</td><td>REST &mdash; <span class="fs-code">/reset</span>, <span class="fs-code">/step</span>, <span class="fs-code">/state</span>, <span class="fs-code">/health</span></td></tr>
+        <tr><td>Python</td><td>&ge; 3.11</td></tr>
+      </tbody></table></div>
+    </section>
+
+    <!-- ACTIONS -->
+    <section class="fs-section" id="fs-actions">
+      <div class="fs-tag">// action space</div>
+      <h2>Action Space</h2>
+      <div class="fs-table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Range</th><th>Description</th></tr></thead><tbody>
+        <tr><td>action_type</td><td>str</td><td>10 valid types</td><td>The farming operation to perform this step</td></tr>
+        <tr><td>plot_id</td><td>int</td><td>[0, 3]</td><td>Target land plot (required for plot operations)</td></tr>
+        <tr><td>seed_type</td><td>str</td><td>wheat | rice | corn</td><td>Crop variety (required for buy/plant/sell)</td></tr>
+        <tr><td>quantity</td><td>int</td><td>&gt; 0</td><td>Seeds to buy or kilograms to sell</td></tr>
+      </tbody></table></div>
+      <h3>Valid Action Types</h3>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
+        <span class="fs-code">wait</span><span class="fs-code">buy_seeds</span><span class="fs-code">plant</span><span class="fs-code">irrigate</span><span class="fs-code">pump_water</span><span class="fs-code">apply_fertilizer</span><span class="fs-code">spray_pesticide</span><span class="fs-code">pull_weeds</span><span class="fs-code">harvest</span><span class="fs-code">sell</span><span class="fs-code">clear</span>
+      </div>
+    </section>
+
+    <!-- OBSERVATIONS -->
+    <section class="fs-section" id="fs-obs">
+      <div class="fs-tag">// observation space</div>
+      <h2>Observation Space</h2>
+      <div class="fs-table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead><tbody>
+        <tr><td>day</td><td>int</td><td>Current simulation day</td></tr>
+        <tr><td>money</td><td>float</td><td>Agent cash balance</td></tr>
+        <tr><td>water_tank</td><td>float</td><td>Tank fill fraction [0, 1]</td></tr>
+        <tr><td>aquifer</td><td>float</td><td>Underground reserve in litres</td></tr>
+        <tr><td>seed_inventory</td><td>Dict[str, int]</td><td>Seeds on hand</td></tr>
+        <tr><td>storage</td><td>Dict[str, float]</td><td>Harvested crop kg</td></tr>
+        <tr><td>plots</td><td>List[PlotState]</td><td>4 independent land plot states</td></tr>
+        <tr><td>climate</td><td>ClimateState</td><td>Current temperature, humidity, precipitation</td></tr>
+        <tr><td>market_prices</td><td>Dict[str, MarketPrice]</td><td>Live prices with trend signal</td></tr>
+        <tr><td>text_summary</td><td>str</td><td>Human/LLM-readable narrative snapshot</td></tr>
+        <tr><td>valid_actions</td><td>List[str]</td><td>Context-sensitive legal action hints</td></tr>
+      </tbody></table></div>
+    </section>
+
+    <div class="fs-div"></div>
+
+    <!-- PHYSICS -->
+    <section class="fs-section" id="fs-physics">
+      <div class="fs-tag">// simulation</div>
+      <h2>Physics Engine</h2>
+      <p class="fs-lead">Five simultaneous simulation passes run every day &mdash; grounded in agricultural science, not random walks.</p>
+      <pre class="fs-pre"><span class="fs-num">1.</span> <span class="fs-fn">Precipitation</span>   &rarr; aquifer += climate.precipitation &times; <span class="fs-num">2</span>   <span class="fs-cmt">[mm &rarr; litres]</span>
+<span class="fs-num">2.</span> <span class="fs-fn">Moisture Decay</span>  &rarr; soil_moisture -= climate.moisture_decay + weed_penalty(<span class="fs-num">0.05</span>)
+<span class="fs-num">3.</span> <span class="fs-fn">Pest Escalation</span> &rarr; pest_severity = min(<span class="fs-num">1.0</span>, (sev + <span class="fs-num">0.1</span>) &times; <span class="fs-num">1.5</span>)
+<span class="fs-num">4.</span> <span class="fs-fn">Health Damage</span>   &rarr; health -= <span class="fs-num">0.1</span>&nbsp;&nbsp;<span class="fs-cmt">[if moisture &lt; 0.2 OR NPK &lt; 0.2 OR moisture &gt; 0.9]</span>
+<span class="fs-num">5.</span> <span class="fs-fn">Market Tick</span>    &rarr; sell_price = base &times; (<span class="fs-num">1.0</span> + <span class="fs-num">0.2</span>&middot;sin(2&pi;&middot;day/<span class="fs-num">20</span> + offset) + noise)</pre>
+    </section>
+
+    <!-- CLIMATE -->
+    <section class="fs-section" id="fs-climate">
+      <div class="fs-tag">// environment</div>
+      <h2>Climate System</h2>
+      <p class="fs-p">Climates rotate every <strong>10 days</strong>: <span class="fs-code">temperate &rarr; arid &rarr; tropical</span>. Extreme temperatures (&gt;32&deg;C or &lt;10&deg;C) freeze crop growth entirely.</p>
+      <div class="fs-table-wrap"><table><thead><tr><th>Climate</th><th>Temp</th><th>Humidity</th><th>Precipitation</th><th>Moisture Decay</th><th>Spoilage</th></tr></thead><tbody>
+        <tr><td>temperate</td><td>22&deg;C</td><td>60%</td><td>5 mm/day</td><td>0.05/day</td><td>1%/day</td></tr>
+        <tr><td>arid</td><td>35&deg;C</td><td>20%</td><td>1 mm/day</td><td style="color:#f87171"><strong>0.12/day</strong></td><td>1%/day</td></tr>
+        <tr><td>tropical</td><td>28&deg;C</td><td>90%</td><td>12 mm/day</td><td>0.03/day</td><td style="color:#f87171"><strong>3%/day</strong></td></tr>
+      </tbody></table></div>
+    </section>
+
+    <!-- MARKET -->
+    <section class="fs-section" id="fs-market">
+      <div class="fs-tag">// economics</div>
+      <h2>Market Dynamics</h2>
+      <p class="fs-p">Each crop rides its own <strong>20-day sine wave</strong>, desynchronized by a fixed offset so peaks never align:</p>
+      <pre class="fs-pre"><span class="fs-var">offset</span> = {<span class="fs-str">"wheat"</span>: <span class="fs-num">0</span>, <span class="fs-str">"rice"</span>: <span class="fs-num">7</span>, <span class="fs-str">"corn"</span>: <span class="fs-num">13</span>}
+sell_price = base_sell &times; (<span class="fs-num">1.0</span> + <span class="fs-num">0.20</span> &times; sin(2&pi; &times; (day + offset) / <span class="fs-num">20</span>) + noise)</pre>
+      <h3>Price Elasticity</h3>
+      <p class="fs-p">Large sell orders crash their own price:</p>
+      <pre class="fs-pre">price_drop = min(<span class="fs-num">50%</span>, qty_sold / <span class="fs-num">10</span>kg &times; <span class="fs-num">1%</span>)
+sell_price *= (<span class="fs-num">1.0</span> - price_drop)</pre>
+    </section>
+
+    <div class="fs-div"></div>
+
+    <!-- CROPS -->
+    <section class="fs-section" id="fs-crops">
+      <div class="fs-tag">// crop reference</div>
+      <h2>Crop Reference</h2>
+      <div class="fs-alert fs-alert-warn"><strong>&#9888; Critical:</strong>&nbsp; Once a plot reaches <span class="fs-code">mature</span>, you have exactly <strong>3 days</strong> to harvest before it withers and is permanently lost.</div>
+      <div class="fs-table-wrap"><table><thead><tr><th>Crop</th><th>Grow Days</th><th>Max Yield</th><th>Buy $</th><th>Sell $</th><th>Water Need</th><th>NPK Drain</th></tr></thead><tbody>
+        <tr><td>wheat</td><td>7 days</td><td>10 kg</td><td>$5.00</td><td>$8.00</td><td>Low</td><td>[0.05, 0.02, 0.03]</td></tr>
+        <tr><td>rice</td><td>12 days</td><td>20 kg</td><td>$8.00</td><td>$14.00</td><td style="color:#f87171"><strong>High</strong></td><td>[0.03, 0.04, 0.05]</td></tr>
+        <tr><td>corn</td><td>18 days</td><td>35 kg</td><td>$12.00</td><td>$20.00</td><td>Medium</td><td>[0.08, 0.04, 0.02]</td></tr>
+      </tbody></table></div>
+    </section>
+
+    <div class="fs-div"></div>
+
+    <!-- TASKS -->
+    <section class="fs-section" id="fs-tasks">
+      <div class="fs-tag">// curriculum</div>
+      <h2>The 3 Curriculum Tasks</h2>
+      <p class="fs-lead">Progressive difficulty from basic crop management to drought survival under volatile markets.</p>
+      <div class="fs-task-grid">
+        <div class="fs-task fs-task-easy"><div class="fs-task-num">TASK 01 &middot; &#127856; EASY</div><h4>Single Crop Stable</h4><div class="fs-meta">Start: $200 &middot; Max Days: 30</div><div class="fs-challenge">Double your starting money through stable single-crop cultivation.</div></div>
+        <div class="fs-task fs-task-med"><div class="fs-task-num">TASK 02 &middot; &#128998; MEDIUM</div><h4>Multi-Crop Market Timing</h4><div class="fs-meta">Start: $150 &middot; Max Days: 45</div><div class="fs-challenge">Profit across all 3 crops at peak prices. 40% of score from selling during price peaks.</div></div>
+        <div class="fs-task fs-task-hard"><div class="fs-task-num">TASK 03 &middot; &#128997; HARD</div><h4>Drought Survival</h4><div class="fs-meta">Start: $100 &middot; Max Days: 60</div><div class="fs-challenge">Every 5th day: zero precipitation + &minus;15L tank drain. Pump from aquifer to survive.</div></div>
+      </div>
+    </section>
+
+    <!-- GRADING -->
+    <section class="fs-section" id="fs-grading">
+      <div class="fs-tag">// scoring</div>
+      <h2>Grading Formulas</h2>
+      <p class="fs-p">Every episode produces a final grade in [0.0, 1.0] via <span class="fs-code">observation.metadata["grade"]</span>. A score &ge; <strong>0.80</strong> is professional tier.</p>
+      <h3>Task 1 &mdash; Single Crop Stable</h3>
+      <pre class="fs-pre">score = clamp(net_worth / (initial_money &times; <span class="fs-num">2.0</span>), <span class="fs-num">0</span>, <span class="fs-num">1</span>) &minus; min(<span class="fs-num">0.20</span>, withered &times; <span class="fs-num">0.05</span>)</pre>
+      <h3>Task 2 &mdash; Multi-Crop Market Timing</h3>
+      <pre class="fs-pre">score = <span class="fs-num">0.6</span> &times; profit_score + <span class="fs-num">0.4</span> &times; timing_score &minus; min(<span class="fs-num">0.30</span>, withered &times; <span class="fs-num">0.10</span>)
+timing_score = clamp(premium_revenue / (total_revenue &times; <span class="fs-num">0.3</span>), <span class="fs-num">0</span>, <span class="fs-num">1</span>)</pre>
+      <h3>Task 3 &mdash; Drought Survival</h3>
+      <pre class="fs-pre">score = <span class="fs-num">0.5</span> &times; profit + <span class="fs-num">0.3</span> &times; survival + <span class="fs-num">0.2</span> &times; resilience &minus; min(<span class="fs-num">0.40</span>, withered &times; <span class="fs-num">0.15</span>)
+resilience = healthy_days / max_days &nbsp;<span class="fs-cmt"># days where &ge; 2 plots had health &ge; 0.6</span></pre>
+    </section>
+
+    <!-- REWARDS -->
+    <section class="fs-section" id="fs-rewards">
+      <div class="fs-tag">// reward shaping</div>
+      <h2>Reward Shaping</h2>
+      <div class="fs-table-wrap"><table><thead><tr><th>Action / Event</th><th>Reward</th><th>Notes</th></tr></thead><tbody>
+        <tr><td>plant</td><td class="fs-pos">+0.2</td><td>Commit bonus</td></tr>
+        <tr><td>irrigate (rescue)</td><td class="fs-pos">+0.5</td><td>Moisture was critically low (&lt;0.25)</td></tr>
+        <tr><td>irrigate (normal)</td><td class="fs-pos">+0.1</td><td></td></tr>
+        <tr><td>harvest</td><td class="fs-pos">up to +1.0</td><td>Scales with yield / max_yield</td></tr>
+        <tr><td>sell</td><td class="fs-pos">+0.3 + premium</td><td>Bonus for above-base price premium</td></tr>
+        <tr><td>wait (crops growing)</td><td class="fs-pos">+0.05/plot</td><td>Smart patience</td></tr>
+        <tr><td>health maintenance</td><td class="fs-pos">+0.1/plot/day</td><td>Passive per living, healthy plot</td></tr>
+        <tr><td>terminal bonus</td><td class="fs-pos">up to +10.0</td><td>max(0, (net_worth/start &minus; 1) &times; 5)</td></tr>
+        <tr><td>crop withers</td><td class="fs-neg">&minus;5.0</td><td>Hard penalty, once per wither event</td></tr>
+        <tr><td>wait with mature plots</td><td class="fs-neg">&minus;0.3/plot</td><td>Every idle day risks permanent loss</td></tr>
+        <tr><td>overwatering</td><td class="fs-neg">&minus;0.15 health</td><td>Moisture &gt; 0.9 damages the crop</td></tr>
+        <tr><td>storage overflow</td><td class="fs-neg">&minus;0.3</td><td>Lost kg on harvest</td></tr>
+        <tr><td>invalid action</td><td class="fs-neg">&minus;1.0</td><td>Hard rejection</td></tr>
+      </tbody></table></div>
+    </section>
+
+    <div class="fs-div"></div>
+
+    <!-- AGENT -->
+    <section class="fs-section" id="fs-agent">
+      <div class="fs-tag">// llm agent</div>
+      <h2>LLM Agent Architecture</h2>
+      <p class="fs-lead"><span class="fs-code">inference.py</span> implements a stateless LLM-as-Agent loop compatible with any OpenAI-format API.</p>
+      <pre class="fs-pre">System Prompt  &rarr;  farming strategy rules (one-shot)
+                        |
+Observation    &rarr;  text_summary + valid_actions list
+                        |
+LLM Response   &rarr;  raw JSON: <span class="fs-str">{"action_type": "harvest", "plot_id": 2}</span>
+                        |
+Parser         &rarr;  parse_action() &rarr; validate_action() &rarr; FALLBACK on malformed
+                        |
+Environment    &rarr;  env.step(action) &rarr; new obs + reward
+                        |
+History Buffer &rarr;  last 4 steps kept in context window</pre>
+      <div class="fs-table-wrap"><table><thead><tr><th>Parameter</th><th>Default</th></tr></thead><tbody>
+        <tr><td>Model</td><td><span class="fs-code">Qwen/Qwen2.5-72B-Instruct</span></td></tr>
+        <tr><td>Temperature</td><td><span class="fs-code">0.2</span></td></tr>
+        <tr><td>Max tokens</td><td><span class="fs-code">150</span></td></tr>
+        <tr><td>Fallback</td><td><span class="fs-code">{"action_type": "wait"}</span></td></tr>
+      </tbody></table></div>
+    </section>
+
+    <div class="fs-div"></div>
+
+    <!-- API -->
+    <section class="fs-section" id="fs-api">
+      <div class="fs-tag">// rest api</div>
+      <h2>API Reference</h2>
+      <p class="fs-lead">The server runs on port <span class="fs-code">7860</span>. All endpoints return JSON.</p>
+      <div class="fs-endpoint"><span class="fs-method fs-get">GET</span><div><div class="fs-endpoint-path">/health</div><div class="fs-endpoint-desc">Liveness check &mdash; returns <span class="fs-code">{"status": "ok"}</span></div></div></div>
+      <div class="fs-endpoint"><span class="fs-method fs-post">POST</span><div><div class="fs-endpoint-path">/reset</div><div class="fs-endpoint-desc">Body: <span class="fs-code">{"task_id": 1|2|3}</span> &mdash; Resets episode, returns initial <span class="fs-code">FarmObservation</span></div></div></div>
+      <div class="fs-endpoint"><span class="fs-method fs-post">POST</span><div><div class="fs-endpoint-path">/step</div><div class="fs-endpoint-desc">Body: <span class="fs-code">{"action": FarmAction}</span> &mdash; Takes one action, returns new <span class="fs-code">FarmObservation</span></div></div></div>
+      <div class="fs-endpoint"><span class="fs-method fs-get">GET</span><div><div class="fs-endpoint-path">/state</div><div class="fs-endpoint-desc">Returns full internal <span class="fs-code">FarmState</span> for debugging</div></div></div>
+      <div class="fs-endpoint"><span class="fs-method fs-get">GET</span><div><div class="fs-endpoint-path">/</div><div class="fs-endpoint-desc">Gradio interactive dashboard UI</div></div></div>
+      <div class="fs-alert fs-alert-info" style="margin-top:24px;"><strong>&#8505; OpenEnv Protocol:</strong>&nbsp;All endpoints are compliant with the OpenEnv Core REST specification for agent loop integration.</div>
+    </section>
+
+    <!-- STRUCTURE -->
+    <section class="fs-section" id="fs-structure">
+      <div class="fs-tag">// repository</div>
+      <h2>File Structure</h2>
+      <pre class="fs-pre"><span class="fs-fn">FarmSimulation/</span>
+&boxvr;&boxh;&boxh; <span class="fs-fn">server/</span>
+&boxv;   &boxvr;&boxh;&boxh; <span class="fs-var">app.py</span>                  <span class="fs-cmt">&larr; OpenEnv create_app() entry + Gradio mount</span>
+&boxv;   &boxvr;&boxh;&boxh; <span class="fs-var">farming_environment.py</span>  <span class="fs-cmt">&larr; Full physics engine + 10 action handlers</span>
+&boxv;   &boxvr;&boxh;&boxh; <span class="fs-var">gradio_app.py</span>           <span class="fs-cmt">&larr; Glassmorphic dark-mode dashboard UI</span>
+&boxv;   &boxvr;&boxh;&boxh; <span class="fs-var">tasks.py</span>               <span class="fs-cmt">&larr; EpisodeRecord + grade_task1/2/3 graders</span>
+&boxv;   &boxur;&boxh;&boxh; <span class="fs-var">requirements.txt</span>
+&boxvr;&boxh;&boxh; <span class="fs-var">models.py</span>                   <span class="fs-cmt">&larr; Pydantic schemas + SEED_CONFIG / CLIMATE_CONFIG</span>
+&boxvr;&boxh;&boxh; <span class="fs-var">inference.py</span>                <span class="fs-cmt">&larr; OpenEnv compliance runner (LLM agent loop)</span>
+&boxvr;&boxh;&boxh; <span class="fs-var">openenv.yaml</span>               <span class="fs-cmt">&larr; OpenEnv manifest</span>
+&boxvr;&boxh;&boxh; <span class="fs-var">pyproject.toml</span>             <span class="fs-cmt">&larr; Dependencies (uv-compatible)</span>
+&boxvr;&boxh;&boxh; <span class="fs-var">Dockerfile</span>                 <span class="fs-cmt">&larr; Python 3.11-slim, exposes :7860</span>
+&boxvr;&boxh;&boxh; <span class="fs-var">baseline_results.json</span>      <span class="fs-cmt">&larr; Last inference run output</span>
+&boxur;&boxh;&boxh; <span class="fs-var">test_phase{2-7}.py</span>         <span class="fs-cmt">&larr; Phase-gated TDD test suite</span></pre>
+    </section>
+
+  </main>
+</div>
+
+<div class="fs-footer">
+  &#127807; <strong style="color:#22c55e">FarmSimulation</strong> &mdash; Built for the Meta Hackathon &middot; MIT License
+  <br><span style="margin-top:6px;display:block;">An OpenEnv-compatible environment for evaluating LLM agents on real-world agricultural planning tasks.</span>
+</div>
+</div>
+"""
+
 def format_hud(obs, metadata):
     day = obs.day
     max_days = metadata.get('max_days', 30)
@@ -306,100 +917,106 @@ def format_action_history(metadata):
 
 def create_gradio_ui(env_factory):
     with gr.Blocks(title="Farming RL Dashboard", css=custom_css, theme=gr.themes.Monochrome()) as ui:
-        gr.Markdown("# 🚜 Farming Intelligence Dashboard")
 
-        with gr.Row():
-            with gr.Column(scale=3):
-                # Overview Section
-                hud_md = gr.Markdown("Loading...", elem_classes=["section-box"])
-                
-                # Farm Plots Grid
-                gr.Markdown("## 🌾 THE FARM", elem_classes=[])
-                plot_mds = []
-                for row_idx in range(2):
-                    with gr.Row():
-                        for col_idx in range(2):
-                            plot_md = gr.Markdown("Loading plot...", elem_classes=["farm-plot"])
-                            plot_mds.append(plot_md)
-                
-                # Resources Row
-                gr.Markdown("## 📦 INVENTORY & ECONOMY", elem_classes=[])
-                with gr.Row():
-                    seeds_md = gr.Markdown("seeds", elem_classes=["section-box"])
-                    storage_md = gr.Markdown("storage", elem_classes=["section-box"])
-                    market_md = gr.Markdown("market", elem_classes=["section-box"])
-                
-                action_feed = gr.Markdown("> 🟢 **SYSTEM READY...** AWAITING COMMAND.", elem_classes=["section-box"])
+        gr.HTML(SHARED_BANNER_HTML)
 
-                status_box = gr.Code(
-                    label="📊 Detailed Observation JSON",
-                    language="json",
-                    lines=15,
-                    interactive=False,
-                    visible=False,
-                )
-                show_debug_btn = gr.Button("🔍 Toggle Debug", size="sm")
+        with gr.Tabs():
+            with gr.Tab("🚜 Dashboard"):
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        # Overview Section
+                        hud_md = gr.Markdown("Loading...", elem_classes=["section-box"])
+                        
+                        # Farm Plots Grid
+                        gr.Markdown("## 🌾 THE FARM", elem_classes=[])
+                        plot_mds = []
+                        for row_idx in range(2):
+                            with gr.Row():
+                                for col_idx in range(2):
+                                    plot_md = gr.Markdown("Loading plot...", elem_classes=["farm-plot"])
+                                    plot_mds.append(plot_md)
+                        
+                        # Resources Row
+                        gr.Markdown("## 📦 INVENTORY & ECONOMY", elem_classes=[])
+                        with gr.Row():
+                            seeds_md = gr.Markdown("seeds", elem_classes=["section-box"])
+                            storage_md = gr.Markdown("storage", elem_classes=["section-box"])
+                            market_md = gr.Markdown("market", elem_classes=["section-box"])
+                        
+                        action_feed = gr.Markdown("> 🟢 **SYSTEM READY...** AWAITING COMMAND.", elem_classes=["section-box"])
 
-            # Control Panel
-            with gr.Column(scale=1, elem_classes=["section-box"]):
-                gr.Markdown("### 🕹️ COMMAND CENTER")
-                
-                with gr.Row():
-                    task_id_input = gr.Dropdown(
-                        choices=[("Easy", 1), ("Medium", 2), ("Hard", 3)],
-                        value=1,
-                        label="Difficulty"
-                    )
-                    reset_btn = gr.Button("♻️ RESET", variant="secondary")
-                
-                gr.Markdown("---")
-                gr.Markdown("#### ⚡ QUICK ACTIONS")
-                with gr.Row():
-                    buy_btn = gr.Button("🛒 BUY SEEDS", elem_classes=["action-btn"])
-                    wait_btn = gr.Button("⏰ WAIT", elem_classes=["action-btn"])
-                with gr.Row():
-                    pump_btn = gr.Button("⚙️ PUMP", elem_classes=["action-btn"])
-                
-                gr.Markdown("---")
-                gr.Markdown("#### 🌱 PLOT OPERATIONS")
-                plot_selector = gr.Radio(
-                    choices=[0, 1, 2, 3],
-                    value=0,
-                    label="Select Target Plot"
-                )
-                
-                with gr.Row():
-                    plant_btn = gr.Button("🌱 PLANT", variant="primary")
-                    irrigate_btn = gr.Button("💧 WATER", variant="primary")
-                    harvest_btn = gr.Button("🌾 HARVEST", variant="primary")
-                with gr.Row():
-                    fertilize_btn = gr.Button("🧪 FERTILIZE", variant="primary")
-                    spray_btn = gr.Button("🦟 SPRAY", variant="primary")
-                    pull_weeds_btn = gr.Button("🤲 WEED", variant="primary")
-                
-                clear_btn = gr.Button("🧹 CLEAR DEAD", variant="secondary")
+                        status_box = gr.Code(
+                            label="📊 Detailed Observation JSON",
+                            language="json",
+                            lines=15,
+                            interactive=False,
+                            visible=False,
+                        )
+                        show_debug_btn = gr.Button("🔍 Toggle Debug", size="sm")
 
-                gr.Markdown("---")
-                gr.Markdown("#### 📦 RESOURCES")
-                seed_type = gr.Dropdown(
-                    choices=["wheat", "rice", "corn"],
-                    value="wheat",
-                    label="Target Crop"
-                )
-                
-                quantity = gr.Slider(
-                    minimum=1,
-                    maximum=20,
-                    value=5,
-                    step=1,
-                    label="Quantity (Buy/Sell)"
-                )
-                
-                sell_btn = gr.Button("💰 SELL CROPS", variant="secondary")
-                
-                show_history_btn = gr.Button("📜 Toggle Action History", size="sm")
-                history_display = gr.JSON(label="Action History (All Days)", visible=False)
-                episode_stats = gr.JSON(label="Metadata", visible=False)
+                    # Control Panel
+                    with gr.Column(scale=1, elem_classes=["section-box"]):
+                        gr.Markdown("### 🕹️ COMMAND CENTER")
+                        
+                        with gr.Row():
+                            task_id_input = gr.Dropdown(
+                                choices=[("Easy", 1), ("Medium", 2), ("Hard", 3)],
+                                value=1,
+                                label="Difficulty"
+                            )
+                            reset_btn = gr.Button("♻️ RESET", variant="secondary")
+                        
+                        gr.Markdown("---")
+                        gr.Markdown("#### ⚡ QUICK ACTIONS")
+                        with gr.Row():
+                            buy_btn = gr.Button("🛒 BUY SEEDS", elem_classes=["action-btn"])
+                            wait_btn = gr.Button("⏰ WAIT", elem_classes=["action-btn"])
+                        with gr.Row():
+                            pump_btn = gr.Button("⚙️ PUMP", elem_classes=["action-btn"])
+                        
+                        gr.Markdown("---")
+                        gr.Markdown("#### 🌱 PLOT OPERATIONS")
+                        plot_selector = gr.Radio(
+                            choices=[0, 1, 2, 3],
+                            value=0,
+                            label="Select Target Plot"
+                        )
+                        
+                        with gr.Row():
+                            plant_btn = gr.Button("🌱 PLANT", variant="primary")
+                            irrigate_btn = gr.Button("💧 WATER", variant="primary")
+                            harvest_btn = gr.Button("🌾 HARVEST", variant="primary")
+                        with gr.Row():
+                            fertilize_btn = gr.Button("🧪 FERTILIZE", variant="primary")
+                            spray_btn = gr.Button("🦟 SPRAY", variant="primary")
+                            pull_weeds_btn = gr.Button("🤲 WEED", variant="primary")
+                        
+                        clear_btn = gr.Button("🧹 CLEAR DEAD", variant="secondary")
+
+                        gr.Markdown("---")
+                        gr.Markdown("#### 📦 RESOURCES")
+                        seed_type = gr.Dropdown(
+                            choices=["wheat", "rice", "corn"],
+                            value="wheat",
+                            label="Target Crop"
+                        )
+                        
+                        quantity = gr.Slider(
+                            minimum=1,
+                            maximum=20,
+                            value=5,
+                            step=1,
+                            label="Quantity (Buy/Sell)"
+                        )
+                        
+                        sell_btn = gr.Button("💰 SELL CROPS", variant="secondary")
+                        
+                        show_history_btn = gr.Button("📜 Toggle Action History", size="sm")
+                        history_display = gr.JSON(label="Action History (All Days)", visible=False)
+                        episode_stats = gr.JSON(label="Metadata", visible=False)
+
+            with gr.Tab("📖 Documentation"):
+                gr.HTML(DOCS_HTML)
 
         # Output states matching in update function
         all_outputs = [hud_md] + plot_mds + [seeds_md, storage_md, market_md, action_feed, history_display, status_box, episode_stats]
