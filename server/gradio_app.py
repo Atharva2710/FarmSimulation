@@ -261,6 +261,49 @@ def format_market(obs):
         lines.append(f"| {k.title()} | **${v.sell_price:.2f}** | {trend} |")
     return "\n".join(lines)
 
+def prettify_observation_json(obs):
+    """Convert observation to prettified JSON format."""
+    import json
+    
+    # Convert observation to dict (assuming obs has a dict representation or attributes)
+    obs_dict = {}
+    
+    # Extract all observable attributes
+    if hasattr(obs, '__dict__'):
+        for key, value in obs.__dict__.items():
+            if not key.startswith('_'):
+                # Handle special types
+                if hasattr(value, '__dict__'):
+                    # Nested object
+                    obs_dict[key] = {k: v for k, v in value.__dict__.items() if not k.startswith('_')}
+                elif isinstance(value, (list, dict)):
+                    obs_dict[key] = value
+                else:
+                    obs_dict[key] = value
+    
+    # Pretty print with indentation
+    return json.dumps(obs_dict, indent=2, default=str)
+
+def format_action_history(metadata):
+    """Format action history as JSON object - organized by day with full state snapshots."""
+    history = metadata.get("action_history", [])
+    
+    if not history:
+        return {"message": "No actions taken yet"}
+    
+    # Organize actions by day (reverse order - newest first)
+    history_by_day = {}
+    for entry in reversed(history):
+        day_key = f"Day {entry['day']}"
+        # Include the full state snapshot for each day
+        history_by_day[day_key] = entry
+    
+    # Return as dict with total count
+    return {
+        "total_days_recorded": len(history),
+        **history_by_day  # Unpack day entries at top level
+    }
+
 def create_gradio_ui(env_factory):
     with gr.Blocks(title="Farming RL Dashboard", css=custom_css, theme=gr.themes.Monochrome()) as ui:
         gr.Markdown("# 🚜 Farming Intelligence Dashboard")
@@ -288,9 +331,10 @@ def create_gradio_ui(env_factory):
                 
                 action_feed = gr.Markdown("> 🟢 **SYSTEM READY...** AWAITING COMMAND.", elem_classes=["section-box"])
 
-                status_box = gr.Textbox(
+                status_box = gr.Code(
                     label="📊 Detailed Observation JSON",
-                    lines=10,
+                    language="json",
+                    lines=15,
                     interactive=False,
                     visible=False,
                 )
@@ -353,10 +397,12 @@ def create_gradio_ui(env_factory):
                 
                 sell_btn = gr.Button("💰 SELL CROPS", variant="secondary")
                 
+                show_history_btn = gr.Button("📜 Toggle Action History", size="sm")
+                history_display = gr.JSON(label="Action History (All Days)", visible=False)
                 episode_stats = gr.JSON(label="Metadata", visible=False)
 
         # Output states matching in update function
-        all_outputs = [hud_md] + plot_mds + [seeds_md, storage_md, market_md, action_feed, status_box, episode_stats]
+        all_outputs = [hud_md] + plot_mds + [seeds_md, storage_md, market_md, action_feed, history_display, status_box, episode_stats]
 
         def get_status():
             env = env_factory()
@@ -370,8 +416,10 @@ def create_gradio_ui(env_factory):
             out_storage = format_resources(obs, "🌾 STORAGE", obs.storage, "kg")
             out_market = format_market(obs)
             out_msg = f"> {msg}" if msg else "> AWAITING COMMAND..."
+            out_history = format_action_history(metadata)
+            out_json = prettify_observation_json(obs)
             
-            return tuple([out_hud] + out_plots + [out_seeds, out_storage, out_market, out_msg, str(obs), metadata])
+            return tuple([out_hud] + out_plots + [out_seeds, out_storage, out_market, out_msg, out_history, out_json, metadata])
 
         def handle_reset(tid):
             env = env_factory()
@@ -407,5 +455,6 @@ def create_gradio_ui(env_factory):
         pull_weeds_btn.click(lambda p, q, s: handle_action("pull_weeds", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
         sell_btn.click(lambda p, q, s: handle_action("sell", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
         show_debug_btn.click(lambda: gr.update(visible=not status_box.visible), outputs=[status_box])
+        show_history_btn.click(lambda: gr.update(visible=not history_display.visible), outputs=[history_display])
 
     return ui
