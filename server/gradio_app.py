@@ -2,194 +2,307 @@ import gradio as gr
 import os
 
 custom_css = """
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Syne:wght@700;800&family=DM+Mono:wght@400;500&display=swap');
 
+/* ── ROOT TOKENS ──────────────────────────────────────── */
 :root {
-    --bg-dark: #09090b;
-    --panel-bg: rgba(24, 24, 27, 0.6);
-    --border-color: rgba(255, 255, 255, 0.08);
-    --accent: #10b981; /* Emerald Green */
-    --accent-glow: rgba(16, 185, 129, 0.2);
-    --text-main: #e4e4e7;
-    --text-muted: #a1a1aa;
+    --bg:          #0a0f0a;
+    --panel:       rgba(14, 22, 14, 0.92);
+    --border:      rgba(34, 197, 94, 0.13);
+    --border-hi:   rgba(34, 197, 94, 0.35);
+    --green:       #22c55e;
+    --green-dim:   #16a34a;
+    --green-glow:  rgba(34, 197, 94, 0.15);
+    --amber:       #f59e0b;
+    --text:        #ddeedd;
+    --muted:       #5a7a5a;
+    --font-sans:   'Inter', system-ui, -apple-system, sans-serif;
+    --font-mono:   'DM Mono', monospace;
+    --font-head:   'Syne', sans-serif;
+    --r:           14px;
+    --rl:          20px;
 }
 
+/* ── GLOBAL ──────────────────────────────────────────── */
 body, .gradio-container {
-    font-family: 'Outfit', sans-serif !important;
-    background: radial-gradient(circle at top, #1e1e24 0%, var(--bg-dark) 100%) !important;
-    color: var(--text-main) !important;
+    font-family: var(--font-sans) !important;
+    background: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(34,197,94,0.07) 0%, var(--bg) 60%) !important;
+    color: var(--text) !important;
+    min-height: 100vh !important;
 }
 
-/* Glassmorphic Section Panels */
-.section-box {
-    background: var(--panel-bg) !important;
+/* transparent bg erasers for Gradio chrome */
+.gradio-container > .main,
+.gradio-container .wrap,
+.gradio-container .tabs,
+.gradio-container .tab-content,
+footer,
+.gradio-container .block,
+.gradio-container .form,
+.gradio-container .box,
+.gradio-container > div > div {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* ── TABS ───────────────────────────────────────────── */
+.tabs > .tab-nav {
+    border-bottom: none !important;
+    background: rgba(14, 22, 14, 0.7) !important;
     backdrop-filter: blur(16px) !important;
     -webkit-backdrop-filter: blur(16px) !important;
-    border: 1px solid var(--border-color) !important;
-    border-radius: 16px !important;
-    padding: 25px !important;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4) !important;
-    transition: all 0.3s ease !important;
+    padding: 6px !important;
+    margin: 0 auto 32px auto !important;
+    display: flex !important;
+    justify-content: center !important;
+    gap: 4px !important;
+    border-radius: 100px !important;
+    border: 1px solid var(--border) !important;
+    max-width: max-content !important;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05) !important;
+}
+
+.tab-nav button {
+    font-family: var(--font-head) !important;
+    font-size: 1.4rem !important; /* Made significantly larger as requested */
+    font-weight: 800 !important;
+    letter-spacing: -0.5px !important;
+    color: var(--text) !important;
+    opacity: 0.6 !important;
+    padding: 12px 36px !important; /* Adjusted padding to accommodate the larger text */
+    border: none !important;
+    border-radius: 100px !important;
+    background: transparent !important;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.tab-nav button:hover {
+    opacity: 1 !important;
+    background: rgba(255, 255, 255, 0.05) !important;
+}
+
+.tab-nav button.selected {
+    color: #000 !important;
+    background: linear-gradient(135deg, #22c55e, #16a34a) !important;
+    opacity: 1 !important;
+    box-shadow: 0 4px 16px rgba(34, 197, 94, 0.3) !important;
+    border: none !important;
+}
+
+/* ── SECTION PANELS ──────────────────────────────────── */
+.section-box {
+    background: var(--panel) !important;
+    backdrop-filter: blur(18px) !important;
+    -webkit-backdrop-filter: blur(18px) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--rl) !important;
+    padding: 22px 24px !important;
+    box-shadow: 0 4px 36px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.04) !important;
+    transition: border-color 0.25s, box-shadow 0.25s !important;
 }
 
 .section-box:hover {
-    border-color: rgba(255,255,255,0.15) !important;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6) !important;
+    border-color: var(--border-hi) !important;
+    box-shadow: 0 6px 44px rgba(34,197,94,0.07), inset 0 1px 0 rgba(255,255,255,0.06) !important;
 }
 
-/* Farm Plots - Interactive Cards */
+/* ── FARM PLOT CARDS ──────────────────────────────────── */
 .farm-plot {
-    background: linear-gradient(145deg, rgba(39,39,42,0.8) 0%, rgba(24,24,27,0.95) 100%) !important;
-    border: 1px solid rgba(255,255,255,0.05) !important;
-    border-radius: 20px !important;
-    padding: 25px !important;
+    background: linear-gradient(150deg, rgba(12,20,12,0.97) 0%, rgba(8,13,8,1) 100%) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--rl) !important;
+    padding: 22px !important;
     text-align: center !important;
-    box-shadow: inset 0 1px 1px rgba(255,255,255,0.05), 0 10px 20px rgba(0,0,0,0.5) !important;
-    transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.75), inset 0 1px 0 rgba(255,255,255,0.03) !important;
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
     position: relative !important;
     overflow: hidden !important;
 }
 
-/* Shine effect on hover */
 .farm-plot::before {
     content: '';
     position: absolute;
     top: 0; left: -150%; width: 50%; height: 100%;
-    background: linear-gradient(to right, transparent, rgba(255,255,255,0.03), transparent);
+    background: linear-gradient(to right, transparent, rgba(34,197,94,0.05), transparent);
     transform: skewX(-20deg);
-    transition: left 0.7s ease;
+    transition: left 0.6s ease;
 }
 
 .farm-plot:hover {
-    transform: translateY(-6px) scale(1.02) !important;
-    box-shadow: 0 15px 35px var(--accent-glow) !important;
-    border-color: rgba(16, 185, 129, 0.5) !important;
+    transform: translateY(-5px) scale(1.02) !important;
+    border-color: var(--border-hi) !important;
+    box-shadow: 0 18px 44px rgba(34,197,94,0.14) !important;
 }
 
-.farm-plot:hover::before {
-    left: 200%;
-}
+.farm-plot:hover::before { left: 200%; }
 
-/* Floating animation for Plot Icons */
-@keyframes float {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-8px); }
-}
-
-.plot-icon-wrapper {
-    animation: float 4s ease-in-out infinite;
-    display: inline-block;
-}
-
-/* Typography Enhancements */
+/* ── TYPOGRAPHY ───────────────────────────────────────── */
 h1, h2, h3, h4 {
-    background: linear-gradient(135deg, #34d399, #10b981);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    font-family: var(--font-head) !important;
     font-weight: 800 !important;
-    margin-bottom: 0.5rem !important;
+    margin-bottom: 0.4rem !important;
+    background: none !important;
+    -webkit-text-fill-color: var(--green) !important;
+    color: var(--green) !important;
+    letter-spacing: -0.3px !important;
 }
 
-hr {
-    border-color: var(--border-color) !important;
-    margin: 15px 0 !important;
+/* section labels like "## THE FARM" */
+h2 {
+    font-family: var(--font-mono) !important;
+    font-size: 0.72rem !important;
+    font-weight: 500 !important;
+    letter-spacing: 2.5px !important;
+    text-transform: uppercase !important;
+    color: var(--muted) !important;
+    -webkit-text-fill-color: var(--muted) !important;
+    opacity: 1 !important;
 }
 
-/* Tables Styling */
+hr { border-color: var(--border) !important; margin: 14px 0 !important; }
+p, li { color: var(--text) !important; line-height: 1.65 !important; }
+
+/* ── TABLES ──────────────────────────────────────────── */
 table {
-    width: 100%;
+    width: 100% !important;
     border-collapse: separate !important;
-    border-spacing: 0 8px !important;
-    font-size: 0.9em;
+    border-spacing: 0 5px !important;
+    font-family: var(--font-mono) !important;
+    font-size: 0.8rem !important;
 }
 
 th {
-    text-align: left;
-    color: var(--text-muted) !important;
-    text-transform: uppercase;
-    font-size: 0.75rem;
-    letter-spacing: 1px;
-    padding: 0 15px 10px 15px !important;
+    color: var(--muted) !important;
+    text-transform: uppercase !important;
+    font-size: 0.66rem !important;
+    letter-spacing: 1.5px !important;
+    padding: 0 12px 8px !important;
     border: none !important;
+    background: none !important;
+    -webkit-text-fill-color: var(--muted) !important;
 }
 
 td {
-    background: rgba(255,255,255,0.02) !important;
-    padding: 12px 15px !important;
-    border: 1px solid transparent !important;
-    transition: all 0.2s ease;
+    background: rgba(34,197,94,0.03) !important;
+    padding: 9px 12px !important;
+    border: 1px solid rgba(34,197,94,0.06) !important;
+    color: var(--text) !important;
+    transition: background 0.2s, border-color 0.2s !important;
 }
 
-tr td:first-child { border-radius: 8px 0 0 8px; font-weight: 600; color: #fff;}
-tr td:last-child { border-radius: 0 8px 8px 0; }
+tr td:first-child { border-radius: 8px 0 0 8px !important; color: #fff !important; font-weight: 600 !important; }
+tr td:last-child  { border-radius: 0 8px 8px 0 !important; }
 
 tr:hover td {
-    background: rgba(16, 185, 129, 0.08) !important;
-    border-color: rgba(16, 185, 129, 0.2) !important;
-    border-left: none !important;
-    border-right: none !important;
-    color: #fff !important;
+    background: rgba(34,197,94,0.07) !important;
+    border-color: rgba(34,197,94,0.2) !important;
 }
 
-/* Buttons */
-button.gr-button {
-    font-family: 'Outfit', sans-serif !important;
-    border-radius: 12px !important;
+/* ── BUTTONS ─────────────────────────────────────────── */
+button, .gr-button {
+    font-family: var(--font-mono) !important;
+    font-size: 0.76rem !important;
+    font-weight: 500 !important;
+    letter-spacing: 0.8px !important;
+    text-transform: uppercase !important;
+    border-radius: var(--r) !important;
+    padding: 10px 16px !important;
+    transition: all 0.22s ease !important;
+    cursor: pointer !important;
+}
+
+button:hover { transform: translateY(-2px) !important; }
+button:active { transform: translateY(1px) !important; }
+
+/* PRIMARY — green */
+button[class*="primary"], .gr-button-primary {
+    background: linear-gradient(135deg, #22c55e, #16a34a) !important;
+    color: #000 !important;
     border: none !important;
-    font-weight: 600 !important;
-    letter-spacing: 0.5px !important;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    padding: 12px 20px !important;
-    text-transform: uppercase;
-    font-size: 0.85rem !important;
+    box-shadow: 0 4px 18px rgba(34,197,94,0.28) !important;
+    font-weight: 700 !important;
 }
 
-button.gr-button:hover {
-    transform: translateY(-3px) !important;
-    box-shadow: 0 8px 20px rgba(0,0,0,0.4) !important;
+button[class*="primary"]:hover {
+    box-shadow: 0 8px 30px rgba(34,197,94,0.42) !important;
 }
 
-button.gr-button:active {
-    transform: translateY(1px) !important;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.4) !important;
+/* SECONDARY */
+button[class*="secondary"], .gr-button-secondary {
+    background: rgba(14,22,14,0.8) !important;
+    color: var(--muted) !important;
+    border: 1px solid var(--border) !important;
 }
 
-.gr-button-primary { 
-    background: linear-gradient(135deg, #10b981, #059669) !important; 
-    color: white !important; 
-    box-shadow: 0 4px 15px rgba(16,185,129,0.3) !important;
+button[class*="secondary"]:hover {
+    border-color: var(--border-hi) !important;
+    color: var(--green) !important;
 }
 
-.gr-button-secondary { 
-    background: linear-gradient(135deg, #3f3f46, #27272a) !important; 
-    color: white !important; 
-    border: 1px solid rgba(255,255,255,0.1) !important;
+/* QUICK ACTIONS — amber */
+.action-btn {
+    background: rgba(245,158,11,0.08) !important;
+    color: var(--amber) !important;
+    border: 1px solid rgba(245,158,11,0.22) !important;
 }
 
-.action-btn { 
-    background: linear-gradient(135deg, #8b5cf6, #6d28d9) !important; 
-    color: white !important; 
-    box-shadow: 0 4px 15px rgba(139,92,246,0.3) !important;
+.action-btn:hover {
+    background: rgba(245,158,11,0.16) !important;
+    border-color: rgba(245,158,11,0.45) !important;
+    box-shadow: 0 6px 22px rgba(245,158,11,0.18) !important;
 }
 
-/* Inputs & Forms */
-.gr-input, .gr-dropdown {
-    background: rgba(0,0,0,0.3) !important;
-    border: 1px solid var(--border-color) !important;
-    border-radius: 8px !important;
-    color: white !important;
+/* ── INPUTS & FORMS ──────────────────────────────────── */
+input, select, textarea {
+    background: rgba(8,14,8,0.85) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 10px !important;
+    color: var(--text) !important;
+    font-family: var(--font-mono) !important;
+    font-size: 0.8rem !important;
 }
 
-.gr-input:focus {
-    border-color: var(--accent) !important;
-    box-shadow: 0 0 0 2px var(--accent-glow) !important;
+input:focus, select:focus {
+    border-color: var(--green) !important;
+    box-shadow: 0 0 0 3px var(--green-glow) !important;
+    outline: none !important;
 }
+
+input[type=range]::-webkit-slider-thumb { background: var(--green) !important; }
+input[type=range]::-webkit-slider-runnable-track { background: rgba(34,197,94,0.18) !important; border-radius: 4px !important; }
+input[type=radio], input[type=checkbox] { accent-color: var(--green) !important; }
+
+/* ── LABELS ──────────────────────────────────────────── */
+label, .label-wrap span {
+    font-family: var(--font-mono) !important;
+    font-size: 0.7rem !important;
+    color: var(--muted) !important;
+    text-transform: uppercase !important;
+    letter-spacing: 1.2px !important;
+}
+
+/* ── CODE / JSON ─────────────────────────────────────── */
+pre, code, .gr-code {
+    background: rgba(0,0,0,0.65) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--r) !important;
+    font-family: var(--font-mono) !important;
+    font-size: 0.78rem !important;
+    color: var(--green) !important;
+}
+
+/* ── SCROLLBAR ───────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(34,197,94,0.2); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(34,197,94,0.45); }
 """
 
 SHARED_BANNER_HTML = """
 <div id="fs-shared-banner">
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Syne:wght@700;800&family=DM+Mono:wght@400;500&display=swap');
 #fs-shared-banner {
   position: relative;
   overflow: hidden;
@@ -199,7 +312,10 @@ SHARED_BANNER_HTML = """
   background:
     linear-gradient(180deg, rgba(34,197,94,0.07) 0%, transparent 100%),
     radial-gradient(ellipse 70% 60% at 50% 0%, rgba(34,197,94,0.12) 0%, transparent 70%);
-  font-family: 'DM Sans', 'Outfit', sans-serif;
+  font-family: 'Inter', system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 .fsb-badge {
   display: inline-flex; align-items: center; gap: 8px;
@@ -232,11 +348,11 @@ SHARED_BANNER_HTML = """
 .fsb-sub {
   font-size: 1rem;
   color: #7a8f82;
-  max-width: 580px;
+  max-width: 680px;
   margin: 0 auto 24px;
-  text-align: center;
+  text-align: center !important;
   line-height: 1.65;
-  font-family: 'DM Sans', 'Outfit', sans-serif;
+  font-family: 'Inter', system-ui, sans-serif;
 }
 .fsb-pills {
   display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
@@ -254,7 +370,9 @@ SHARED_BANNER_HTML = """
 </style>
 <div class="fsb-badge"><span class="fsb-dot"></span>&nbsp;OpenEnv &middot; v1.0.0 &middot; Meta Hackathon 2025</div>
 <h1>&#127807; Farm<span>Simulation</span></h1>
+<br>
 <p class="fsb-sub">A physics-grounded Reinforcement Learning environment where AI agents master agricultural resource management, market timing, and drought survival.</p>
+<br>
 <div class="fsb-pills">
   <span class="fsb-pill fsb-pill-g">&#128013; Python &ge; 3.11</span>
   <span class="fsb-pill fsb-pill-a">&#9889; FastAPI + Uvicorn</span>
@@ -269,7 +387,7 @@ DOCS_HTML = """
 <div id="fs-docs">
 <style>
 #fs-docs {
-  font-family: 'DM Sans', 'Outfit', sans-serif;
+  font-family: 'Inter', system-ui, sans-serif;
   background: #080b0a;
   color: #e2e8e4;
   min-height: 100vh;
@@ -312,7 +430,7 @@ DOCS_HTML = """
   animation: fs-pulse 2s ease-in-out infinite; display: inline-block; }
 @keyframes fs-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(1.5)} }
 .fs-banner h1 {
-  font-family: 'Syne', 'Outfit', sans-serif !important;
+  font-family: 'Inter', system-ui, sans-serif !important;
   font-size: clamp(2.6rem, 5vw, 4.8rem) !important;
   font-weight: 800 !important;
   line-height: 1.05 !important;
@@ -348,7 +466,7 @@ DOCS_HTML = """
 }
 .fs-sidebar::-webkit-scrollbar { width: 3px; }
 .fs-sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
-.fs-logo { font-family: 'Syne','Outfit',sans-serif; font-weight: 800; font-size: 0.95rem; color: #22c55e; margin-bottom: 28px; display: block; }
+.fs-logo { font-family: 'Inter', system-ui, sans-serif; font-weight: 800; font-size: 0.95rem; color: #22c55e; margin-bottom: 28px; display: block; }
 .fs-nav-section { margin-bottom: 24px; }
 .fs-nav-label { font-family: 'DM Mono',monospace; font-size: 0.62rem; letter-spacing: 1.5px; text-transform: uppercase; color: #2d3d32; margin-bottom: 8px; padding: 0 8px; }
 .fs-nav-link {
@@ -364,8 +482,8 @@ DOCS_HTML = """
 .fs-main { padding: 48px 56px; max-width: 900px; }
 .fs-section { margin-bottom: 72px; scroll-margin-top: 32px; }
 .fs-tag { display: inline-block; font-family: 'DM Mono',monospace; font-size: 0.67rem; color: #22c55e; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 10px; }
-.fs-section h2 { font-family: 'Syne','Outfit',sans-serif !important; font-size: 1.9rem !important; color: #fff !important; margin-bottom: 6px !important; }
-.fs-section h3 { font-family: 'Syne','Outfit',sans-serif !important; font-size: 1.1rem !important; color: #22c55e !important; margin: 28px 0 14px !important; }
+.fs-section h2 { font-family: 'Inter', system-ui, sans-serif !important; font-size: 1.9rem !important; color: #fff !important; margin-bottom: 6px !important; letter-spacing: -0.5px !important; }
+.fs-section h3 { font-family: 'Inter', system-ui, sans-serif !important; font-size: 1.1rem !important; color: #22c55e !important; margin: 28px 0 14px !important; }
 .fs-lead { font-size: 0.95rem; color: #7a8f82; margin-bottom: 28px; border-left: 2px solid #22c55e; padding-left: 14px; max-width: 640px; }
 .fs-p { color: #7a8f82; margin-bottom: 14px; font-size: 0.9rem; }
 
@@ -378,7 +496,7 @@ DOCS_HTML = """
 }
 .fs-stat-card:hover { border-color: rgba(34,197,94,0.3); }
 .fs-stat-label { font-family: 'DM Mono',monospace; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 1px; color: #2d3d32; margin-bottom: 8px; }
-.fs-stat-value { font-family: 'Syne','Outfit',sans-serif; font-size: 2rem; font-weight: 800; margin-bottom: 6px; }
+.fs-stat-value { font-family: 'Inter', system-ui, sans-serif; font-size: 2rem; font-weight: 800; margin-bottom: 6px; letter-spacing: -1px; }
 .fs-stat-desc { font-size: 0.8rem; color: #7a8f82; }
 
 /* ── Tables ── */
@@ -807,8 +925,8 @@ def format_hud(obs, metadata):
     temp = getattr(climate, "temperature", 0)
     drought_active = metadata.get("drought_active", False)
     
-    msg = f"## 📅 DAY {day}/{max_days} &nbsp;&nbsp;|&nbsp;&nbsp; 💰 FUNDS: ${money:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; 💧 TANK: {water_pct:.0f}% &nbsp;&nbsp;|&nbsp;&nbsp; 🌊 AQUIFER: {obs.aquifer:.0f}L\n"
-    msg += f"**🌡️ CLIMATE**: <span style='color:#fbbf24'>{climate_type} ({temp}°C)</span>"
+    msg = f"## 📅 DAY {day}/{max_days} &nbsp;&nbsp;|&nbsp;&nbsp; 💰 FUNDS: ${money:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; 💧 TANK: {water_pct:.0f}% &nbsp;&nbsp;|&nbsp;&nbsp; 🌊 AQUIFER: {obs.aquifer:.0f}L\n\n"
+    msg += f"<div style='margin-top: 12px; margin-bottom: 6px;'>**🌡️ CLIMATE**: <span style='color:#fbbf24'>{climate_type} ({temp}°C)</span></div>"
     if drought_active:
         msg += " 🔥 <strong style='color:#ef4444'>DROUGHT ACTIVE!</strong>"
     return msg
@@ -916,16 +1034,24 @@ def format_action_history(metadata):
     }
 
 def create_gradio_ui(env_factory):
-    with gr.Blocks(title="Farming RL Dashboard", css=custom_css, theme=gr.themes.Monochrome()) as ui:
+    with gr.Blocks(title="Farming RL Dashboard", css=custom_css, theme=gr.themes.Base(
+        primary_hue=gr.themes.colors.green,
+        neutral_hue=gr.themes.colors.gray,
+        font=[gr.themes.GoogleFont("Inter"), "sans-serif"],
+        font_mono=[gr.themes.GoogleFont("DM Mono"), "monospace"],
+    )) as ui:
 
         gr.HTML(SHARED_BANNER_HTML)
 
         with gr.Tabs():
             with gr.Tab("🚜 Dashboard"):
+                gr.HTML("<div style='height: 24px'></div>")
                 with gr.Row():
                     with gr.Column(scale=3):
                         # Overview Section
                         hud_md = gr.Markdown("Loading...", elem_classes=["section-box"])
+                        
+                        gr.HTML("<div style='height: 32px'></div>")
                         
                         # Farm Plots Grid
                         gr.Markdown("## 🌾 THE FARM", elem_classes=[])
@@ -935,6 +1061,8 @@ def create_gradio_ui(env_factory):
                                 for col_idx in range(2):
                                     plot_md = gr.Markdown("Loading plot...", elem_classes=["farm-plot"])
                                     plot_mds.append(plot_md)
+                        
+                        gr.HTML("<div style='height: 32px'></div>")
                         
                         # Resources Row
                         gr.Markdown("## 📦 INVENTORY & ECONOMY", elem_classes=[])
@@ -966,7 +1094,7 @@ def create_gradio_ui(env_factory):
                             )
                             reset_btn = gr.Button("♻️ RESET", variant="secondary")
                         
-                        gr.Markdown("---")
+                        gr.HTML("<hr style='margin: 24px 0; border-color: rgba(255,255,255,0.08)'>")
                         gr.Markdown("#### ⚡ QUICK ACTIONS")
                         with gr.Row():
                             buy_btn = gr.Button("🛒 BUY SEEDS", elem_classes=["action-btn"])
@@ -974,7 +1102,7 @@ def create_gradio_ui(env_factory):
                         with gr.Row():
                             pump_btn = gr.Button("⚙️ PUMP", elem_classes=["action-btn"])
                         
-                        gr.Markdown("---")
+                        gr.HTML("<hr style='margin: 24px 0; border-color: rgba(255,255,255,0.08)'>")
                         gr.Markdown("#### 🌱 PLOT OPERATIONS")
                         plot_selector = gr.Radio(
                             choices=[0, 1, 2, 3],
