@@ -10,12 +10,16 @@ from pydantic import BaseModel, Field
 # ── Enums ────────────────────────────────────────────────────────────────────
 
 class ActionType(str, Enum):
-    BUY_SEEDS = "buy_seeds"
-    PLANT     = "plant"
-    IRRIGATE  = "irrigate"
+    BUY_SEEDS  = "buy_seeds"
+    PLANT      = "plant"
+    IRRIGATE   = "irrigate"
     HARVEST   = "harvest"
     SELL      = "sell"
     WAIT      = "wait"
+    PUMP_WATER = "pump_water"
+    APPLY_FERTILIZER = "apply_fertilizer"
+    SPRAY_PESTICIDE  = "spray_pesticide"
+    PULL_WEEDS       = "pull_weeds"
 
 
 class SeedType(str, Enum):
@@ -48,6 +52,12 @@ class PlotState(BaseModel):
     soil_moisture:  float          = Field(0.5, ge=0.0, le=1.0)
     health:         float          = Field(1.0, ge=0.0, le=1.0)
     yield_estimate: float          = Field(0.0, ge=0.0)
+    nitrogen:       float          = Field(1.0, ge=0.0, le=1.0)
+    phosphorus:     float          = Field(1.0, ge=0.0, le=1.0)
+    potassium:      float          = Field(1.0, ge=0.0, le=1.0)
+    has_weeds:      bool           = Field(False)
+    has_pests:      bool           = Field(False)
+    pest_severity:  float          = Field(0.0, ge=0.0, le=1.0)
 
 
 class ClimateState(BaseModel):
@@ -66,10 +76,10 @@ class MarketPrice(BaseModel):
 
 # ── Config constants ─────────────────────────────────────────────────────────
 
-SEED_CONFIG: Dict[str, Dict[str, float]] = {
-    "wheat": {"grow_days": 7,  "water_need": 0.3, "yield_kg": 10.0, "base_buy": 5.0,  "base_sell": 8.0},
-    "rice":  {"grow_days": 12, "water_need": 0.7, "yield_kg": 20.0, "base_buy": 8.0,  "base_sell": 14.0},
-    "corn":  {"grow_days": 18, "water_need": 0.5, "yield_kg": 35.0, "base_buy": 12.0, "base_sell": 20.0},
+SEED_CONFIG: Dict[str, Dict[str, Any]] = {
+    "wheat": {"grow_days": 7,  "water_need": 0.3, "yield_kg": 10.0, "base_buy": 5.0,  "base_sell": 8.0,  "npk_drain": [0.05, 0.02, 0.03]},
+    "rice":  {"grow_days": 12, "water_need": 0.7, "yield_kg": 20.0, "base_buy": 8.0,  "base_sell": 14.0, "npk_drain": [0.03, 0.04, 0.05]},
+    "corn":  {"grow_days": 18, "water_need": 0.5, "yield_kg": 35.0, "base_buy": 12.0, "base_sell": 20.0, "npk_drain": [0.08, 0.04, 0.02]},
 }
 
 CLIMATE_CONFIG: Dict[str, Dict[str, float]] = {
@@ -86,13 +96,19 @@ WATER_TANK_INITIAL:  float  = 0.8     # fraction full at episode start
 IRRIGATION_COST:     float  = 15.0    # litres per irrigate action
 STORAGE_CAPACITY:    float  = 200.0   # kg max total across all crops
 HARVEST_WINDOW_DAYS: int    = 3       # days after mature before withering
+AQUIFER_CAPACITY:    float  = 1000.0  # litres max in underground aquifer
+AQUIFER_INITIAL:     float  = 500.0   # initial aquifer volume
+PUMP_CAPACITY:       float  = 50.0    # max pumped per action
+PUMP_COST:           float  = 5.0     # money cost to run the pump once
+FERTILIZER_COST:     float  = 10.0    # cost to run apply_fertilizer
+PESTICIDE_COST:      float  = 15.0    # cost to run spray_pesticide
 
 
 # ── Action / Observation / State ─────────────────────────────────────────────
 
 class FarmAction(Action):
-    action_type: str           = Field(..., description="buy_seeds/plant/irrigate/harvest/sell/wait")
-    plot_id:     Optional[int] = Field(None, ge=0, le=3, description="required for plant/irrigate/harvest")
+    action_type: str           = Field(..., description="buy_seeds/plant/irrigate/harvest/sell/wait/pump_water/apply_fertilizer/spray_pesticide/pull_weeds")
+    plot_id:     Optional[int] = Field(None, ge=0, le=3, description="required for plot interactions")
     seed_type:   Optional[str] = Field(None, description="required for buy_seeds and plant")
     quantity:    Optional[int] = Field(None, gt=0, description="seeds to buy or kg to sell")
 
@@ -101,6 +117,7 @@ class FarmObservation(Observation):
     day:            int                    = Field(0,   description="current simulation day")
     money:          float                  = Field(0.0, description="agent cash balance")
     water_tank:     float                  = Field(0.0, ge=0.0, le=1.0, description="tank fill fraction")
+    aquifer:        float                  = Field(0.0, ge=0.0, description="aquifer absolute volume (litres)")
     seed_inventory: Dict[str, int]         = Field(default_factory=dict, description="seeds in hand")
     storage:        Dict[str, float]       = Field(default_factory=dict, description="harvested kg in storage")
     plots:          List[PlotState]        = Field(default_factory=list, description="4 plot states")
@@ -156,6 +173,7 @@ if __name__ == "__main__":
         day=1,
         money=200.0,
         water_tank=0.8,
+        aquifer=500.0,
         seed_inventory={"wheat": 5, "rice": 0, "corn": 0},
         storage={"wheat": 0.0, "rice": 0.0, "corn": 0.0},
         plots=[PlotState(plot_id=i) for i in range(4)],

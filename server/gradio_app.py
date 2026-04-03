@@ -196,7 +196,7 @@ def format_hud(obs, metadata):
     temp = getattr(climate, "temperature", 0)
     drought_active = metadata.get("drought_active", False)
     
-    msg = f"## 📅 DAY {day}/{max_days} &nbsp;&nbsp;|&nbsp;&nbsp; 💰 FUNDS: ${money:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; 💧 WATER: {water_pct:.0f}%\n"
+    msg = f"## 📅 DAY {day}/{max_days} &nbsp;&nbsp;|&nbsp;&nbsp; 💰 FUNDS: ${money:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; 💧 TANK: {water_pct:.0f}% &nbsp;&nbsp;|&nbsp;&nbsp; 🌊 AQUIFER: {obs.aquifer:.0f}L\n"
     msg += f"**🌡️ CLIMATE**: <span style='color:#fbbf24'>{climate_type} ({temp}°C)</span>"
     if drought_active:
         msg += " 🔥 <strong style='color:#ef4444'>DROUGHT ACTIVE!</strong>"
@@ -216,8 +216,20 @@ def format_plot(obs, idx):
     
     moisture = getattr(plot, "soil_moisture", 0) * 100
     health = getattr(plot, "health", 0) * 100
+    nitrogen = getattr(plot, "nitrogen", 1.0) * 100
+    phosphorus = getattr(plot, "phosphorus", 1.0) * 100
+    potassium = getattr(plot, "potassium", 1.0) * 100
+    has_weeds = getattr(plot, "has_weeds", False)
+    has_pests = getattr(plot, "has_pests", False)
+    pest_sev = getattr(plot, "pest_severity", 0.0) * 100
     
-    return f"""### PLOT {idx}
+    warnings = ""
+    if has_weeds:
+        warnings += " 🌿"
+    if has_pests:
+        warnings += f" 🐛({pest_sev:.0f}%)"
+    
+    return f"""### PLOT {idx}{warnings}
     
 <div class="plot-icon-wrapper" style="font-size: 3.5rem; margin:15px 0;">{icon}</div>
 
@@ -226,7 +238,8 @@ def format_plot(obs, idx):
 
 <div style="margin-top: 15px; text-align: left; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px;">
     <strong>💧 WATER</strong> &nbsp;&nbsp;&nbsp;&nbsp; {moisture:.0f}%<br>
-    <strong>✨ HEALTH</strong> &nbsp;&nbsp;&nbsp; {health:.0f}%
+    <strong>✨ HEALTH</strong> &nbsp;&nbsp;&nbsp; {health:.0f}%<br>
+    <strong>🌱 N-P-K</strong> &nbsp;&nbsp;&nbsp;&nbsp; {nitrogen:.0f}-{phosphorus:.0f}-{potassium:.0f}
 </div>
 """
 
@@ -300,6 +313,8 @@ def create_gradio_ui(env_factory):
                 with gr.Row():
                     buy_btn = gr.Button("🛒 BUY SEEDS", elem_classes=["action-btn"])
                     wait_btn = gr.Button("⏰ WAIT", elem_classes=["action-btn"])
+                with gr.Row():
+                    pump_btn = gr.Button("⚙️ PUMP", elem_classes=["action-btn"])
                 
                 gr.Markdown("---")
                 gr.Markdown("#### 🌱 PLOT OPERATIONS")
@@ -313,6 +328,10 @@ def create_gradio_ui(env_factory):
                     plant_btn = gr.Button("🌱 PLANT", variant="primary")
                     irrigate_btn = gr.Button("💧 WATER", variant="primary")
                     harvest_btn = gr.Button("🌾 HARVEST", variant="primary")
+                with gr.Row():
+                    fertilize_btn = gr.Button("🧪 FERTILIZE", variant="primary")
+                    spray_btn = gr.Button("🦟 SPRAY", variant="primary")
+                    pull_weeds_btn = gr.Button("🤲 WEED", variant="primary")
                 
                 clear_btn = gr.Button("🧹 CLEAR DEAD", variant="secondary")
 
@@ -363,7 +382,7 @@ def create_gradio_ui(env_factory):
         def handle_action(action_type, p_id, qty, s_type):
             env = env_factory()
             action = {"action_type": action_type}
-            if action_type in ["plant", "irrigate", "harvest", "clear"]:
+            if action_type in ["plant", "irrigate", "harvest", "clear", "apply_fertilizer", "spray_pesticide", "pull_weeds"]:
                 action["plot_id"] = int(p_id)
             if action_type in ["buy_seeds", "sell"]:
                 action["seed_type"] = s_type
@@ -378,10 +397,14 @@ def create_gradio_ui(env_factory):
         reset_btn.click(handle_reset, inputs=[task_id_input], outputs=all_outputs)
         wait_btn.click(lambda p, q, s: handle_action("wait", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
         buy_btn.click(lambda p, q, s: handle_action("buy_seeds", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
+        pump_btn.click(lambda p, q, s: handle_action("pump_water", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
         plant_btn.click(lambda p, q, s: handle_action("plant", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
         irrigate_btn.click(lambda p, q, s: handle_action("irrigate", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
         harvest_btn.click(lambda p, q, s: handle_action("harvest", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
         clear_btn.click(lambda p, q, s: handle_action("clear", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
+        fertilize_btn.click(lambda p, q, s: handle_action("apply_fertilizer", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
+        spray_btn.click(lambda p, q, s: handle_action("spray_pesticide", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
+        pull_weeds_btn.click(lambda p, q, s: handle_action("pull_weeds", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
         sell_btn.click(lambda p, q, s: handle_action("sell", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
         show_debug_btn.click(lambda: gr.update(visible=not status_box.visible), outputs=[status_box])
 
