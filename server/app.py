@@ -10,12 +10,15 @@ from models import FarmAction, FarmObservation
 
 GLOBAL_ENV = None
 
+
 def make_env() -> FarmingEnvironment:
     """
     Factory function — create_app calls this every time it needs
     a fresh environment instance. 
     By returning a singleton, we preserve state across stateless HTTP calls.
+
     task_id can be overridden via FARMING_TASK_ID environment variable.
+
     """
     global GLOBAL_ENV
     if GLOBAL_ENV is None:
