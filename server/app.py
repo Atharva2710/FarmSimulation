@@ -46,7 +46,9 @@ app = gr.mount_gradio_app(app, ui, path="/")
 
 
 def main():
-    """Entry point for running the server directly."""
+    """Entry point for running the server directly.
+    
+    """
     uvicorn.run(app, host="0.0.0.0", port=7860)
 
 
