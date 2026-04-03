@@ -8,8 +8,6 @@ from openenv.core import create_app
 from farming_environment import FarmingEnvironment
 from models import FarmAction, FarmObservation  
 
-
-# Create a singleton environment for HTTP statefulness during development/testing
 GLOBAL_ENV = None
 
 def make_env() -> FarmingEnvironment:
