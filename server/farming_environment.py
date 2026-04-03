@@ -72,6 +72,9 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         self._action_message:    str           = ""   # Last action feedback
         self._last_harvest_amount: float       = 0.0  # For celebration
         self._prev_money:        float         = 0.0  # Previous money amount
+        
+        # Action history for UI display
+        self._action_history:    List[Dict[str, Any]] = []
 
         # Auto-initialize so the env works even without explicit reset()
         self.reset()
@@ -322,6 +325,56 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         # Track money change for dynamic display
         self._last_money_change = self._money - self._prev_money
         
+        # Add to action history with FULL STATE SNAPSHOT (keep last 30 days)
+        climate = self._current_climate()
+        self._action_history.append({
+            "day": self._day,
+            "action": {
+                "type": act,
+                "details": self._action_message,
+            },
+            "reward": round(reward, 2),
+            "state_before": {
+                "money": round(self._prev_money, 2),
+                "water_tank": round(self._water_tank / WATER_TANK_CAPACITY, 2),
+            },
+            "state_after": {
+                "money": round(self._money, 2),
+                "money_change": round(self._last_money_change, 2),
+                "water_tank": round(self._water_tank / WATER_TANK_CAPACITY, 2),
+                "water_level": round(self._water_tank, 1),
+                "seed_inventory": dict(self._seed_inventory),
+                "storage": {k: round(v, 1) for k, v in self._storage.items()},
+                "plots": [
+                    {
+                        "plot_id": p.plot_id,
+                        "stage": p.stage,
+                        "crop_type": p.crop_type if p.stage != "empty" else None,
+                        "days_planted": p.days_planted if p.stage != "empty" else 0,
+                        "health": round(p.health, 2) if p.stage != "empty" else None,
+                        "soil_moisture": round(p.soil_moisture, 2) if p.stage != "empty" else None,
+                    }
+                    for p in self._plots
+                ],
+                "climate": {
+                    "type": climate.climate_type,
+                    "temperature": climate.temperature,
+                    "humidity": round(climate.humidity, 2),
+                    "precipitation": climate.precipitation,
+                },
+                "market_prices": {
+                    seed: {
+                        "price": round(price.sell_price, 2),
+                        "trend": round(price.trend, 2)
+                    }
+                    for seed, price in self._market_prices.items()
+                }
+            },
+            "done": done,
+        })
+        if len(self._action_history) > 30:
+            self._action_history.pop(0)
+        
         obs = self._build_observation(reward=round(reward, 4), done=done)
         return obs
 
@@ -338,6 +391,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             "max_days": self._max_days,
             "done": self._done,
             "last_grade": getattr(self, "_last_grade", 0.0),
+            "action_history": self._action_history.copy(),
         }
 
     def state(self) -> FarmState:
