@@ -472,17 +472,16 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         if self._water_tank < IRRIGATION_COST:
             return -1.0   # tank empty
 
+        # Add water to plot REGARDLESS of the 80% threshold, but keep penalty for over-saturation
+        plot.soil_moisture = min(1.0, plot.soil_moisture + 0.3)
+        self._water_tank -= IRRIGATION_COST
+
         # wasteful irrigation penalty
         if plot.soil_moisture > 0.8:
-            self._water_tank -= IRRIGATION_COST
             return -0.5   # used water but didn't need to
 
         # check danger BEFORE irrigating so the rescue bonus can actually fire
-        was_critically_low = plot.soil_moisture < 0.25
-
-        # good irrigation
-        self._water_tank  -= IRRIGATION_COST
-        plot.soil_moisture = min(1.0, plot.soil_moisture + 0.3)
+        was_critically_low = plot.soil_moisture < 0.25 + 0.3 # was it low enough before irrigation?
 
         if was_critically_low:
             return 0.5   # rescued a crop from critical drought
@@ -768,16 +767,15 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         climate = self._current_climate()
         cfg     = CLIMATE_CONFIG[climate.climate_type]
 
-        # 1. refill aquifer from precipitation, rain doesn't fill tank directly anymore
-        precip_litres    = climate.precipitation * 2   # mm → litres
-        self._aquifer = min(
-            AQUIFER_CAPACITY,
-            self._aquifer + precip_litres,
-        )
+        # 1. refill aquifer and water tank from precipitation
+        precip_litres = climate.precipitation * 2   # 1mm ~ 2L
+        self._aquifer = min(AQUIFER_CAPACITY, self._aquifer + precip_litres)
+        
+        # Rain directly fills the water tank now (up to capacity)
+        self._water_tank = min(WATER_TANK_CAPACITY, self._water_tank + precip_litres)
 
-        # 2. drought override (task 3): precipitation is 0 on drought days
+        # 2. drought override (task 3): every 5th day on drought task is extra dry
         if self._drought_active and self._day % 5 == 0:
-            # every 5th day is a drought day — no rain, extra moisture decay
             self._water_tank = max(0.0, self._water_tank - 15.0)
 
         # 3. update each plot: decay moisture, advance growth
@@ -804,12 +802,14 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
                 plot.pest_severity = min(1.0, (plot.pest_severity + 0.1) * 1.5)
                 plot.health = max(0.0, plot.health - (0.05 * plot.pest_severity))
 
-            # moisture decay (climate-dependent + weeds)
+            # moisture change (Rain benefit - Climate decay - Weed penalty)
+            rain_benefit = climate.precipitation * 0.03 # 5mm rain = +15% moisture
             weed_penalty = 0.05 if plot.has_weeds else 0.0
-            plot.soil_moisture = max(
-                0.0,
-                plot.soil_moisture - cfg["moisture_decay"] - weed_penalty,
-            )
+            moisture_loss = cfg["moisture_decay"] + weed_penalty
+            
+            # Application: Soil moisture rises with rain or falls with climate
+            new_moisture = plot.soil_moisture + rain_benefit - moisture_loss
+            plot.soil_moisture = max(0.0, min(1.0, new_moisture))
 
             # health degrades when moisture is critically low
             if plot.soil_moisture < 0.2:
