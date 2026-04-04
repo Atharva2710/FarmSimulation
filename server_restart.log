@@ -1,0 +1,23 @@
+/Users/atharva/Desktop/Farming-Simulation/server/gradio_app.py:1037: UserWarning: The parameters have been moved from the Blocks constructor to the launch() method in Gradio 6.0: theme, css. Please pass these parameters to launch() instead.
+  with gr.Blocks(title="Farming RL Dashboard", css=custom_css, theme=gr.themes.Base(
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+  warnings.warn(  # deprecated in 14.0 - 2024-11-09
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/uvicorn/protocols/websockets/websockets_impl.py:17: DeprecationWarning: websockets.server.WebSocketServerProtocol is deprecated
+  from websockets.server import WebSocketServerProtocol
+INFO:     Started server process [39430]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:7860 (Press CTRL+C to quit)
+INFO:     127.0.0.1:57261 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57261 - "GET /manifest.json HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57261 - "GET /theme.css?v=078b53afbcde6e67684be7a1e3236158d24ca87d4009f3a800e3e7b202955106 HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/routes.py:1403: DeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  return await queue_join_helper(body, request, username)
+INFO:     127.0.0.1:57261 - "POST /gradio_api/queue/join HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57261 - "GET /gradio_api/queue/data?session_hash=e8nd5htntp9 HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  return next(self.gen)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/queueing.py:168: Pandas4Warning: The copy keyword is deprecated and will be removed in a future version. Copy-on-Write is active in pandas since 3.0 which utilizes a lazy copy mechanism that defers copies until necessary. Use .copy() to make an eager copy if necessary.
+  .infer_objects(copy=False)  # type: ignore
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:148: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  next(self.gen)
