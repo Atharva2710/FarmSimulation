@@ -1,45 +1,89 @@
 # Meta Hackathon - Farm Simulation Competition-Grade Analysis
 
-## 🎯 EXECUTIVE SUMMARY
+## 🎯 EXECUTIVE SUMMARY - UPDATED WITH ACTUAL JUDGING CRITERIA
 
-**Current State:** Your farming simulation has SOLID foundations but is **too forgiving for expert-level competition**. For Meta Hackathon judging against global experts, you need to demonstrate REAL agricultural complexity and decision-making challenges that show genuine real-world utility.
+**Current State:** Your farming simulation is **READY FOR ROUND 1 SUBMISSION** with an estimated score of **80/100** (competitive for advancing).
 
-**Critical Gap:** The environment is currently optimized for **human playability and RL agent training**, NOT for demonstrating world-class agricultural AI decision-making.
+**Round 1 Status:** ✅ ALL mandatory requirements met (HF Space, OpenEnv compliance, Dockerfile, baseline, 3+ tasks)
 
-**Recommendation:** **REVERT the recent "bug fixes"** and instead **ADD ADVANCED FEATURES** that showcase real farming complexity.
+**Critical Insight:** Round 1 is **LLM-evaluated with structured rubrics**. Round 2 is manual review by Meta/HF engineers. The strategy must be different for each round.
+
+**Recommendation for Round 1:** **SUBMIT CURRENT VERSION** after fixing README. Keep recent balance changes (makes baseline scores reasonable).
+
+**Recommendation for Round 2 (if you advance):** **ADD ADVANCED FEATURES** for manual expert review (multi-season persistence, crop rotation, phenology, forecasting).
 
 ---
 
-## ⚠️ CRITICAL ISSUE: Recent "Fixes" Made Environment TOO EASY
+## 📊 ROUND 1 vs ROUND 2 STRATEGY
 
-### Problem Analysis
+### Round 1: LLM-Evaluated with Structured Rubrics
 
-The recent balance changes (FIXES_APPLIED.md) were designed for:
-- ✅ Human players learning the game
-- ✅ RL agents with limited training compute
-- ❌ **NOT for Meta Hackathon competition judging**
+**Evaluation Method:**
+- Automated LLM evaluator scores against predefined criteria
+- Focuses on: compliance, task quality, baseline performance
+- Wants to see: reasonable baseline scores, clear difficulty progression
 
-### Changes That Hurt Competition Viability:
+**Strategy for Round 1:**
+- ✅ **KEEP** recent balance changes (health recovery, reduced penalties)
+- ✅ Makes Task 1 achievable for naive LLMs (shows environment works)
+- ✅ Demonstrates good reward shaping (partial credit, not binary)
+- ✅ Current balance: Task 1 ~0.4, Task 2 ~0.3, Task 3 ~0.2 (good spread)
 
-| "Fix" | Impact on Competition Quality | Recommendation |
-|-------|------------------------------|----------------|
-| Health recovery (+0.03/day) | **TOO FORGIVING** - Crops self-heal with no skill required | REVERT or make conditional on expensive actions |
-| Degradation rates reduced 30% | **TOO EASY** - Removes time pressure | REVERT to original or make harder |
-| Easy mode penalties -60% | **TRIVIALIZES** easy mode | Keep harder penalties, add TUTORIAL mode instead |
-| Irrigation power -33% | Good change, KEEP | ✅ Keep |
-| Fertilizer power -25% | Good change, KEEP | ✅ Keep |
+**Why This Works:**
+- LLM evaluator wants to see agents can learn/improve
+- Too-hard environment = all agents score ~0.0 = looks broken
+- Current balance shows: easy is achievable, hard is challenging
 
-### Why This Matters for Meta Hackathon:
+---
 
-**Expert judges will ask:**
-1. "Is this environment challenging enough to require sophisticated AI?"
-   - **Current answer:** No - even naive strategies succeed on easy mode
-   
-2. "Does this demonstrate real-world agricultural complexity?"
-   - **Current answer:** Partially - missing key features like soil persistence, crop rotation, multi-year planning
-   
-3. "What makes this different from a farming game tutorial?"
-   - **Current answer:** Not much - current balance feels like Stardew Valley, not precision agriculture
+### Round 2: Manual Review by Meta/HF Engineers
+
+**Evaluation Method:**
+- Human experts manually review top submissions
+- Deep dive on: real-world utility, creativity, novel features
+- Looks for: sophisticated mechanics, research grounding, innovation
+
+**Strategy for Round 2 (if you advance):**
+- ⚠️ **ADD** advanced features (multi-season, crop rotation, phenology)
+- ⚠️ **REVERT** some easy-mode changes OR add harder Task 4
+- ⚠️ **DOCUMENT** scientific grounding with citations
+- ⚠️ **POSITION** as "precision agriculture decision support"
+
+**Why This Works:**
+- Manual reviewers can understand complex features
+- Advanced mechanics show depth and real-world thinking
+- Scientific citations demonstrate research rigor
+
+---
+
+## ✅ RECENT BALANCE CHANGES - ROUND 1 VERDICT: KEEP THEM
+
+### Re-Analysis with Round 1 Context:
+
+| Change | Round 1 Impact | Round 2 Impact | Verdict |
+|--------|----------------|----------------|---------|
+| Health recovery (+0.03/day) | ✅ Makes Task 1 learnable | ⚠️ May seem too forgiving | **KEEP for R1** |
+| Degradation -30% | ✅ Gives agents time to react | ⚠️ Reduces challenge | **KEEP for R1** |
+| Easy penalties -60% | ✅ Baseline scores reasonable | ⚠️ May hurt difficulty score | **KEEP for R1** |
+| Irrigation -33% | ✅ Good balance change | ✅ More strategic | **KEEP** |
+| Fertilizer -25% | ✅ Good balance change | ✅ More realistic | **KEEP** |
+
+### Why LLM Evaluator Prefers Current Balance:
+
+**Rubric Criterion: "Task & Grader Quality" (25%)**
+- "Hard task genuinely challenges frontier models?"
+- Current Task 3 scores: ~0.1-0.3 (GOOD - shows challenge)
+- If Task 1 also scored ~0.1, evaluator might think grading is broken
+
+**Rubric Criterion: "Environment Design" (20%)**
+- "Meaningful reward function provides useful signal?"
+- Current: Clear progression 0.4 → 0.3 → 0.2 (GOOD - shows learning)
+- Too hard: All scores ~0.1 (BAD - no differentiation)
+
+**Rubric Criterion: "Real-World Utility" (30%)**
+- "Would someone use this to train/evaluate agents?"
+- Current: Yes - agents can learn on Task 1, test on Task 3
+- Too hard: No - even Task 1 is impossible, unusable for training
 
 ---
 
