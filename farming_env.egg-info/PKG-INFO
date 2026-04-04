@@ -8,3 +8,4 @@ Requires-Dist: uvicorn[standard]>=0.29.0
 Requires-Dist: pydantic>=2.0.0
 Requires-Dist: requests>=2.31.0
 Requires-Dist: openai>=1.0.0
+Requires-Dist: gradio>=4.0.0
