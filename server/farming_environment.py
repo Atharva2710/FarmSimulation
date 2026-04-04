@@ -472,16 +472,16 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         if self._water_tank < IRRIGATION_COST:
             return -1.0   # tank empty
 
-        # Add water to plot REGARDLESS of the 80% threshold, but keep penalty for over-saturation
-        plot.soil_moisture = min(1.0, plot.soil_moisture + 0.3)
+        # Add water to plot (REDUCED from +0.3 to +0.2 for more strategic play)
+        plot.soil_moisture = min(1.0, plot.soil_moisture + 0.2)
         self._water_tank -= IRRIGATION_COST
 
-        # wasteful irrigation penalty
-        if plot.soil_moisture > 0.8:
+        # wasteful irrigation penalty (threshold lowered from >0.8 to >0.75)
+        if plot.soil_moisture > 0.75:
             return -0.5   # used water but didn't need to
 
         # check danger BEFORE irrigating so the rescue bonus can actually fire
-        was_critically_low = plot.soil_moisture < 0.25 + 0.3 # was it low enough before irrigation?
+        was_critically_low = plot.soil_moisture < 0.25 + 0.2 # was it low enough before irrigation?
 
         if was_critically_low:
             return 0.5   # rescued a crop from critical drought
@@ -605,9 +605,10 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             return -0.2
             
         self._money -= FERTILIZER_COST
-        plot.nitrogen = min(1.0, plot.nitrogen + 0.4)
-        plot.phosphorus = min(1.0, plot.phosphorus + 0.4)
-        plot.potassium = min(1.0, plot.potassium + 0.4)
+        # REDUCED from +0.4 to +0.3 for more strategic fertilizer management
+        plot.nitrogen = min(1.0, plot.nitrogen + 0.3)
+        plot.phosphorus = min(1.0, plot.phosphorus + 0.3)
+        plot.potassium = min(1.0, plot.potassium + 0.3)
         return 0.1
 
     def _handle_spray_pesticide(self, action: FarmAction) -> float:
@@ -696,20 +697,30 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
 
     def _daily_passive_reward(self) -> float:
         reward = 0.0
+        
+        # Scale passive rewards by difficulty (easier = more forgiving)
+        reward_scale = {1: 0.15, 2: 0.12, 3: 0.10}  # easy/medium/hard
+        daily_bonus = reward_scale.get(self.task_id, 0.1)
+        
         for plot in self._plots:
             if plot.stage in ("seedling", "growing", "mature"):
-                reward += 0.1 * plot.health   # up to +0.1 per healthy plot per day
+                reward += daily_bonus * plot.health   # scaled by difficulty
         return round(reward, 4)
 
     def _post_advance_penalties(self) -> float:
         penalty = 0.0
+        
+        # Scale withering penalty by task difficulty (easier = more forgiving)
+        penalty_scale = {1: -2.0, 2: -3.5, 3: -5.0}  # easy/medium/hard
+        wither_penalty = penalty_scale.get(self.task_id, -5.0)
+        
         for plot in self._plots:
             if plot.stage == "withered":
                 # Use (plot_id, days_planted) as a unique key so that a
                 # re-planted plot that withers again is counted separately.
                 wither_key = (plot.plot_id, plot.days_planted)
                 if wither_key not in self._withered_plots:
-                    penalty -= 5.0
+                    penalty += wither_penalty  # scaled by difficulty
                     self._withered_count += 1
                     self._withered_plots.add(wither_key)
         return round(penalty, 4)
@@ -811,9 +822,9 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             new_moisture = plot.soil_moisture + rain_benefit - moisture_loss
             plot.soil_moisture = max(0.0, min(1.0, new_moisture))
 
-            # health degrades when moisture is critically low
+            # health degrades when moisture is critically low (REDUCED from -0.1 to -0.07)
             if plot.soil_moisture < 0.2:
-                plot.health = max(0.0, plot.health - 0.1)
+                plot.health = max(0.0, plot.health - 0.07)
 
             # NPK depletion and health degradation
             seed_cfg  = SEED_CONFIG.get(plot.crop_type)
@@ -823,23 +834,34 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
                 plot.phosphorus = max(0.0, plot.phosphorus - p_drain - (0.02 if plot.has_weeds else 0.0))
                 plot.potassium = max(0.0, plot.potassium - k_drain - (0.02 if plot.has_weeds else 0.0))
                 
-                # Check nutrient deficiency
+                # Check nutrient deficiency (REDUCED from -0.1 to -0.07)
                 if plot.nitrogen < 0.2 or plot.phosphorus < 0.2 or plot.potassium < 0.2:
-                    plot.health = max(0.0, plot.health - 0.1)
+                    plot.health = max(0.0, plot.health - 0.07)
+
+            # overwatering penalty (REDUCED from -0.15 to -0.12, threshold from >0.9 to >0.85)
+            if plot.soil_moisture > 0.85:
+                plot.health = max(0.0, plot.health - 0.12)
+            
+            # HEALTH RECOVERY: crops recover slowly when conditions are good
+            # Must happen AFTER all damage but BEFORE withering check so crops can recover
+            if (plot.stage in ("seedling", "growing", "mature") and
+                plot.health > 0.0 and plot.health < 1.0 and
+                plot.soil_moisture >= 0.25 and plot.soil_moisture <= 0.85 and
+                plot.nitrogen >= 0.25 and plot.phosphorus >= 0.25 and plot.potassium >= 0.25 and
+                not plot.has_pests):
+                # Slow recovery when all conditions are stable and good
+                plot.health = min(1.0, plot.health + 0.03)
 
             # If crop dies from damage/decay, immediately wither
             if plot.health <= 0.0 and plot.stage != "withered":
                 plot.stage = "withered"
+                plot.yield_estimate = 0.0
 
             # advance growth counter only if temperatures are not extreme (>32C or <10C)
             extreme_temp = cfg["temp"] > 32.0 or cfg["temp"] < 10.0
             
             if plot.stage != "withered" and not extreme_temp:
                 plot.days_planted += 1
-                
-            # overwatering penalty
-            if plot.soil_moisture > 0.9:
-                plot.health = max(0.0, plot.health - 0.15)
 
             seed_cfg  = SEED_CONFIG[plot.crop_type]
             grow_days = int(seed_cfg["grow_days"])
