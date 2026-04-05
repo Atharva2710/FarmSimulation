@@ -1,9 +1,17 @@
 from __future__ import annotations
 
 import os
+import sys
+
+# Ensure the 'server' directory and root directory are in the import path
+curr_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.dirname(curr_dir)
+if curr_dir not in sys.path:
+    sys.path.insert(0, curr_dir)
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
 
 import uvicorn
-
 from openenv.core import create_app
 from farming_environment import FarmingEnvironment
 from models import FarmAction, FarmObservation  

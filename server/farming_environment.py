@@ -257,7 +257,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             else:
                 self._action_message = f"💰 Sold {qty}kg of {seed}!"
         elif act == "pump_water":
-            reward_change = self._handle_pump_water()
+            reward_change = self._handle_pump_water(action)
             reward += reward_change
             if reward_change < 0:
                 self._action_message = f"❌ Failed to pump water!"
@@ -475,6 +475,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         plot.has_weeds      = False
         plot.has_pests      = False
         plot.pest_severity  = 0.0
+        plot.pesticide_protection = 0
 
         return 0.2   # small positive: agent committed to a plan
 
@@ -651,6 +652,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             
         plot.has_pests = False
         plot.pest_severity = 0.0
+        plot.pesticide_protection = 3
         return 0.2
 
     def _handle_pull_weeds(self, action: FarmAction) -> float:
@@ -665,7 +667,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         plot.has_weeds = False
         return 0.1
 
-    def _handle_pump_water(self) -> float:
+    def _handle_pump_water(self, action: FarmAction) -> float:
         cfg_task = self._task_config()
         cost = PUMP_COST * cfg_task["input_mult"]
 
@@ -873,6 +875,9 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
                     plot.has_weeds = True
                 continue
 
+            # 1. Pesticide Protection Decay
+            plot.pesticide_protection = max(0, plot.pesticide_protection - 1)
+
             # weeds and pests spawning
             if random.random() < 0.15:
                 plot.has_weeds = True
@@ -884,7 +889,8 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             if cfg["temp"] > 30.0:
                 spawn_chance += 0.1
                 
-            if random.random() < spawn_chance:
+            # BLOCK SPONTANEOUS INFESTATION IF PROTECTED
+            if plot.pesticide_protection == 0 and random.random() < spawn_chance:
                 plot.has_pests = True
             
             # Natural Pest Decay: pests die in extreme cold

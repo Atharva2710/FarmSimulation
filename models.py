@@ -58,6 +58,7 @@ class PlotState(BaseModel):
     has_weeds:      bool           = Field(False)
     has_pests:      bool           = Field(False)
     pest_severity:  float          = Field(0.0, ge=0.0, le=1.0)
+    pesticide_protection: int      = Field(0, ge=0, description="days of residual protection remaining")
 
 
 class ClimateState(BaseModel):
@@ -101,7 +102,7 @@ AQUIFER_INITIAL:     float  = 500.0   # initial aquifer volume
 PUMP_CAPACITY:       float  = 50.0    # max pumped per action
 PUMP_COST:           float  = 5.0     # money cost to run the pump once
 FERTILIZER_COST:     float  = 10.0    # cost to run apply_fertilizer
-PESTICIDE_COST:      float  = 15.0    # cost to run spray_pesticide
+PESTICIDE_COST:      float  = 1.5     # cost to run spray_pesticide
 
 
 # ── Action / Observation / State ─────────────────────────────────────────────
