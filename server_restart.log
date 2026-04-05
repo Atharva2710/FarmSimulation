@@ -21,3 +21,126 @@ INFO:     127.0.0.1:57261 - "GET /gradio_api/queue/data?session_hash=e8nd5htntp9
   .infer_objects(copy=False)  # type: ignore
 /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:148: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
   next(self.gen)
+INFO:     127.0.0.1:57283 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57283 - "GET /manifest.json HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57283 - "GET /theme.css?v=078b53afbcde6e67684be7a1e3236158d24ca87d4009f3a800e3e7b202955106 HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/routes.py:1403: DeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  return await queue_join_helper(body, request, username)
+INFO:     127.0.0.1:57283 - "POST /gradio_api/queue/join HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  return next(self.gen)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/queueing.py:168: Pandas4Warning: The copy keyword is deprecated and will be removed in a future version. Copy-on-Write is active in pandas since 3.0 which utilizes a lazy copy mechanism that defers copies until necessary. Use .copy() to make an eager copy if necessary.
+  .infer_objects(copy=False)  # type: ignore
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:148: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  next(self.gen)
+INFO:     127.0.0.1:57283 - "GET /gradio_api/queue/data?session_hash=nq1hui7762g HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/routes.py:1403: DeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  return await queue_join_helper(body, request, username)
+INFO:     127.0.0.1:57283 - "POST /gradio_api/queue/join HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  return next(self.gen)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/queueing.py:168: Pandas4Warning: The copy keyword is deprecated and will be removed in a future version. Copy-on-Write is active in pandas since 3.0 which utilizes a lazy copy mechanism that defers copies until necessary. Use .copy() to make an eager copy if necessary.
+  .infer_objects(copy=False)  # type: ignore
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:148: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  next(self.gen)
+INFO:     127.0.0.1:57283 - "GET /gradio_api/queue/data?session_hash=nq1hui7762g HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/routes.py:1403: DeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  return await queue_join_helper(body, request, username)
+INFO:     127.0.0.1:57283 - "POST /gradio_api/queue/join HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  return next(self.gen)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/queueing.py:168: Pandas4Warning: The copy keyword is deprecated and will be removed in a future version. Copy-on-Write is active in pandas since 3.0 which utilizes a lazy copy mechanism that defers copies until necessary. Use .copy() to make an eager copy if necessary.
+  .infer_objects(copy=False)  # type: ignore
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:148: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  next(self.gen)
+INFO:     127.0.0.1:57283 - "GET /gradio_api/queue/data?session_hash=nq1hui7762g HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/routes.py:1403: DeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  return await queue_join_helper(body, request, username)
+INFO:     127.0.0.1:57283 - "POST /gradio_api/queue/join HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  return next(self.gen)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/queueing.py:168: Pandas4Warning: The copy keyword is deprecated and will be removed in a future version. Copy-on-Write is active in pandas since 3.0 which utilizes a lazy copy mechanism that defers copies until necessary. Use .copy() to make an eager copy if necessary.
+  .infer_objects(copy=False)  # type: ignore
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:148: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  next(self.gen)
+INFO:     127.0.0.1:57283 - "GET /gradio_api/queue/data?session_hash=nq1hui7762g HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/routes.py:1403: DeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  return await queue_join_helper(body, request, username)
+INFO:     127.0.0.1:57283 - "POST /gradio_api/queue/join HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  return next(self.gen)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/queueing.py:168: Pandas4Warning: The copy keyword is deprecated and will be removed in a future version. Copy-on-Write is active in pandas since 3.0 which utilizes a lazy copy mechanism that defers copies until necessary. Use .copy() to make an eager copy if necessary.
+  .infer_objects(copy=False)  # type: ignore
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:148: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  next(self.gen)
+INFO:     127.0.0.1:57283 - "GET /gradio_api/queue/data?session_hash=nq1hui7762g HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/routes.py:1403: DeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  return await queue_join_helper(body, request, username)
+INFO:     127.0.0.1:57283 - "POST /gradio_api/queue/join HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  return next(self.gen)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/queueing.py:168: Pandas4Warning: The copy keyword is deprecated and will be removed in a future version. Copy-on-Write is active in pandas since 3.0 which utilizes a lazy copy mechanism that defers copies until necessary. Use .copy() to make an eager copy if necessary.
+  .infer_objects(copy=False)  # type: ignore
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:148: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  next(self.gen)
+INFO:     127.0.0.1:57283 - "GET /gradio_api/queue/data?session_hash=nq1hui7762g HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/routes.py:1403: DeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  return await queue_join_helper(body, request, username)
+INFO:     127.0.0.1:57283 - "POST /gradio_api/queue/join HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  return next(self.gen)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/queueing.py:168: Pandas4Warning: The copy keyword is deprecated and will be removed in a future version. Copy-on-Write is active in pandas since 3.0 which utilizes a lazy copy mechanism that defers copies until necessary. Use .copy() to make an eager copy if necessary.
+  .infer_objects(copy=False)  # type: ignore
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:148: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  next(self.gen)
+INFO:     127.0.0.1:57283 - "GET /gradio_api/queue/data?session_hash=nq1hui7762g HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/routes.py:1403: DeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  return await queue_join_helper(body, request, username)
+INFO:     127.0.0.1:57286 - "POST /gradio_api/queue/join HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  return next(self.gen)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/queueing.py:168: Pandas4Warning: The copy keyword is deprecated and will be removed in a future version. Copy-on-Write is active in pandas since 3.0 which utilizes a lazy copy mechanism that defers copies until necessary. Use .copy() to make an eager copy if necessary.
+  .infer_objects(copy=False)  # type: ignore
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:148: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  next(self.gen)
+INFO:     127.0.0.1:57286 - "GET /gradio_api/queue/data?session_hash=nq1hui7762g HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/routes.py:1403: DeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  return await queue_join_helper(body, request, username)
+INFO:     127.0.0.1:57288 - "POST /gradio_api/queue/join HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  return next(self.gen)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/queueing.py:168: Pandas4Warning: The copy keyword is deprecated and will be removed in a future version. Copy-on-Write is active in pandas since 3.0 which utilizes a lazy copy mechanism that defers copies until necessary. Use .copy() to make an eager copy if necessary.
+  .infer_objects(copy=False)  # type: ignore
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:148: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  next(self.gen)
+INFO:     127.0.0.1:57288 - "GET /gradio_api/queue/data?session_hash=nq1hui7762g HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/routes.py:1403: DeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  return await queue_join_helper(body, request, username)
+INFO:     127.0.0.1:57288 - "POST /gradio_api/queue/join HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  return next(self.gen)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/queueing.py:168: Pandas4Warning: The copy keyword is deprecated and will be removed in a future version. Copy-on-Write is active in pandas since 3.0 which utilizes a lazy copy mechanism that defers copies until necessary. Use .copy() to make an eager copy if necessary.
+  .infer_objects(copy=False)  # type: ignore
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:148: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  next(self.gen)
+INFO:     127.0.0.1:57288 - "GET /gradio_api/queue/data?session_hash=nq1hui7762g HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/routes.py:1403: DeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  return await queue_join_helper(body, request, username)
+INFO:     127.0.0.1:57288 - "POST /gradio_api/queue/join HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  return next(self.gen)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/queueing.py:168: Pandas4Warning: The copy keyword is deprecated and will be removed in a future version. Copy-on-Write is active in pandas since 3.0 which utilizes a lazy copy mechanism that defers copies until necessary. Use .copy() to make an eager copy if necessary.
+  .infer_objects(copy=False)  # type: ignore
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:148: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  next(self.gen)
+INFO:     127.0.0.1:57288 - "GET /gradio_api/queue/data?session_hash=nq1hui7762g HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/routes.py:1403: DeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+  return await queue_join_helper(body, request, username)
+INFO:     127.0.0.1:57290 - "POST /gradio_api/queue/join HTTP/1.1" 200 OK
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  return next(self.gen)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/gradio/queueing.py:168: Pandas4Warning: The copy keyword is deprecated and will be removed in a future version. Copy-on-Write is active in pandas since 3.0 which utilizes a lazy copy mechanism that defers copies until necessary. Use .copy() to make an eager copy if necessary.
+  .infer_objects(copy=False)  # type: ignore
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:148: Pandas4Warning: 'future.no_silent_downcasting' is deprecated, please refrain from using it.
+  next(self.gen)
+INFO:     127.0.0.1:57290 - "GET /gradio_api/queue/data?session_hash=nq1hui7762g HTTP/1.1" 200 OK
