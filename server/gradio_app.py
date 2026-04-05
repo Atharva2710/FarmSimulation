@@ -1,5 +1,8 @@
 import gradio as gr
 import os
+import json
+import time
+from agents import HeuristicAgent, HybridAgent
 
 custom_css = """
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Syne:wght@700;800&family=DM+Mono:wght@400;500&display=swap');
@@ -951,12 +954,15 @@ def format_plot(obs, idx):
     has_weeds = getattr(plot, "has_weeds", False)
     has_pests = getattr(plot, "has_pests", False)
     pest_sev = getattr(plot, "pest_severity", 0.0) * 100
+    protection = getattr(plot, "pesticide_protection", 0)
     
     warnings = ""
     if has_weeds:
         warnings += " 🌿"
     if has_pests:
         warnings += f" 🐛({pest_sev:.0f}%)"
+    if protection > 0:
+        warnings += f" 🛡️({protection}d)"
     
     return f"""### PLOT {idx}{warnings}
     
@@ -1143,19 +1149,95 @@ def create_gradio_ui(env_factory):
                         history_display = gr.JSON(label="Action History (All Days)", visible=False)
                         episode_stats = gr.JSON(label="Metadata", visible=False)
 
+            # ── AGENT TABS ───────────────────────────────────────────────
+            
+            with gr.Tab("🤖 Auto-Heuristic"):
+                gr.Markdown("## 🤖 HEURISTIC AUTOMATION")
+                gr.Markdown("> This agent uses a hard-coded **Priority Triage System** to manage the farm.")
+                
+                with gr.Column():
+                    h_hud = gr.Markdown("Loading...", elem_classes=["section-box"])
+                    
+                    with gr.Row():
+                        h_plot_0 = gr.Markdown("Plot 0", elem_classes=["farm-plot"])
+                        h_plot_1 = gr.Markdown("Plot 1", elem_classes=["farm-plot"])
+                    with gr.Row():
+                        h_plot_2 = gr.Markdown("Plot 2", elem_classes=["farm-plot"])
+                        h_plot_3 = gr.Markdown("Plot 3", elem_classes=["farm-plot"])
+                    
+                    gr.Markdown("### 🤖 AGENT CONTROLS")
+                    with gr.Row():
+                        h_status = gr.Markdown("🟡 **IDLE**", elem_classes=["section-box"])
+                        h_step_btn = gr.Button("▶️ RUN ONE DAY", variant="primary")
+                        h_auto_toggle = gr.Checkbox(label="🔄 AUTO-PLAY", value=False)
+                    
+                    h_speed = gr.Slider(minimum=0.5, maximum=5.0, value=1.0, step=0.5, label="Delay (seconds)")
+                    
+                    gr.Markdown("#### 📝 AGENT REASONING")
+                    h_reasoning = gr.Markdown("*Awaiting first step...*", elem_classes=["section-box"])
+                    
+                    h_reset = gr.Button("♻️ RESET ENVIRONMENT")
+
+                    with gr.Row():
+                        with gr.Column(scale=1):
+                            gr.Markdown("#### 📈 MARKET PRICES")
+                            h_market = gr.Markdown("Loading...", elem_classes=["section-box"])
+                        with gr.Column(scale=2):
+                            h_history = gr.JSON(label="📝 Full Action History", visible=True)
+
+            with gr.Tab("🧠 Hybrid AI"):
+                gr.Markdown("## 🧠 HYBRID (LLM + HEURISTIC)")
+                gr.Markdown("> Uses an **LLM** that evaluates suggestions from the **Heuristic** agent.")
+                
+                with gr.Column():
+                    ai_hud = gr.Markdown("Loading...", elem_classes=["section-box"])
+                    
+                    with gr.Row():
+                        ai_plot_0 = gr.Markdown("Plot 0", elem_classes=["farm-plot"])
+                        ai_plot_1 = gr.Markdown("Plot 1", elem_classes=["farm-plot"])
+                    with gr.Row():
+                        ai_plot_2 = gr.Markdown("Plot 2", elem_classes=["farm-plot"])
+                        ai_plot_3 = gr.Markdown("Plot 3", elem_classes=["farm-plot"])
+                    
+                    gr.Markdown("### 🧠 AI CONTROLS")
+                    with gr.Row():
+                        ai_status = gr.Markdown("🟡 **IDLE**", elem_classes=["section-box"])
+                        ai_step_btn = gr.Button("🧠 CONSULT AI", variant="primary")
+                        ai_auto_toggle = gr.Checkbox(label="🔄 AUTO-PLAY", value=False)
+                    
+                    gr.Markdown("#### 💡 AI THOUGHT TRACE")
+                    ai_reasoning = gr.Markdown("*Awaiting inference...*", elem_classes=["section-box"])
+                    
+                    ai_reset = gr.Button("♻️ RESET ENVIRONMENT")
+
+                    with gr.Row():
+                        with gr.Column(scale=1):
+                            gr.Markdown("#### 📈 MARKET PRICES")
+                            ai_market = gr.Markdown("Loading...", elem_classes=["section-box"])
+                        with gr.Column(scale=2):
+                            ai_history = gr.JSON(label="📝 Full Action History", visible=True)
+
             with gr.Tab("📖 Documentation"):
                 gr.HTML(DOCS_HTML)
 
         # Output states matching in update function
-        all_outputs = [hud_md] + plot_mds + [seeds_md, storage_md, market_md, action_feed, history_display, status_box, episode_stats]
+        # We need to update Dashboard, Heuristic Tab, and Hybrid Tab
+        base_outputs = [hud_md] + plot_mds + [seeds_md, storage_md, market_md, action_feed, history_display, status_box, episode_stats]
+        h_outputs = [h_hud, h_plot_0, h_plot_1, h_plot_2, h_plot_3, h_reasoning, h_status, h_market, h_history]
+        ai_outputs = [ai_hud, ai_plot_0, ai_plot_1, ai_plot_2, ai_plot_3, ai_reasoning, ai_status, ai_market, ai_history]
+        all_outputs = base_outputs + h_outputs + ai_outputs
 
-        def get_status():
+        # Agent Instances
+        h_agent = HeuristicAgent()
+        ai_agent = HybridAgent()
+
+        def get_status(reasoning="", status="🟢 READY"):
             env = env_factory()
             obs = env.get_observation()
             metadata = env.get_metadata()
             msg = getattr(env, "_action_message", "")
             
-            out_hud = format_hud(obs, metadata)
+            # Dashboard Components
             out_plots = [format_plot(obs, i) for i in range(4)]
             out_seeds = format_resources(obs, "🎒 SEEDS", obs.seed_inventory)
             out_storage = format_resources(obs, "🌾 STORAGE", obs.storage, "kg")
@@ -1164,13 +1246,25 @@ def create_gradio_ui(env_factory):
             out_history = format_action_history(metadata)
             out_json = prettify_observation_json(obs)
             
-            return tuple([out_hud] + out_plots + [out_seeds, out_storage, out_market, out_msg, out_history, out_json, metadata])
+            # Agent Reasoning Integration
+            os.environ["CURRENT_AGENT_REASONING"] = reasoning
+            out_hud = format_hud(obs, metadata)
+            
+            # Agent Tabs
+            h_status_val = f"**{status}**"
+            ai_status_val = f"**{status}**"
+            
+            return tuple(
+                [out_hud] + out_plots + [out_seeds, out_storage, out_market, out_msg, out_history, out_json, metadata] +
+                [out_hud] + out_plots + [reasoning, h_status_val, out_market, out_history] +
+                [out_hud] + out_plots + [reasoning, ai_status_val, out_market, out_history]
+            )
 
         def handle_reset(tid):
             env = env_factory()
             os.environ["FARMING_TASK_ID"] = str(int(tid))
             env.reset(task_id=int(tid))
-            return get_status()
+            return get_status(reasoning="Environment Reset.")
 
         def handle_action(action_type, p_id, qty, s_type):
             env = env_factory()
@@ -1185,7 +1279,30 @@ def create_gradio_ui(env_factory):
             
             env.step(action)
             return get_status()
-        
+
+        def handle_agent_step(mode):
+            try:
+                env = env_factory()
+                obs = env.get_observation()
+                
+                print(f"[AGENT] Running {mode.upper()} step on Day {obs.day}...")
+                
+                if mode == "heuristic":
+                    action, thought = h_agent.act(obs)
+                else:
+                    action, thought = ai_agent.act(obs)
+                
+                print(f"[AGENT] Action: {action['action_type']} | Reasoning: {thought}")
+                
+                env.step(action)
+                return get_status(reasoning=thought, status="🏃 RUNNING")
+            except Exception as e:
+                import traceback
+                error_trace = traceback.format_exc()
+                print(f"[AGENT] CRITICAL ERROR: {error_trace}")
+                return get_status(reasoning=f"❌ ERROR: {str(e)}", status="🔴 CRASHED")
+
+        # Event Handlers
         ui.load(get_status, outputs=all_outputs)
         reset_btn.click(handle_reset, inputs=[task_id_input], outputs=all_outputs)
         wait_btn.click(lambda p, q, s: handle_action("wait", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
@@ -1199,6 +1316,24 @@ def create_gradio_ui(env_factory):
         spray_btn.click(lambda p, q, s: handle_action("spray_pesticide", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
         pull_weeds_btn.click(lambda p, q, s: handle_action("pull_weeds", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
         sell_btn.click(lambda p, q, s: handle_action("sell", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
+        
+        # Agent Controls
+        h_step_btn.click(lambda: handle_agent_step("heuristic"), outputs=all_outputs)
+        ai_step_btn.click(lambda: handle_agent_step("ai"), outputs=all_outputs)
+        h_reset.click(lambda t: handle_reset(t), inputs=[task_id_input], outputs=all_outputs)
+        ai_reset.click(lambda t: handle_reset(t), inputs=[task_id_input], outputs=all_outputs)
+
+        # Timer Logic for Auto-Play (Gradio 4)
+        h_timer = gr.Timer(1.0, active=True)
+        h_timer.tick(lambda auto: handle_agent_step("heuristic") if auto else gr.skip(), inputs=[h_auto_toggle], outputs=all_outputs)
+        
+        ai_timer = gr.Timer(2.0, active=True) # AI is slower
+        ai_timer.tick(lambda auto: handle_agent_step("ai") if auto else gr.skip(), inputs=[ai_auto_toggle], outputs=all_outputs)
+        
+        # Toggle Timers (Gradio 4 timers are active by default, so we control via logic)
+        h_auto_toggle.change(lambda x: x, inputs=[h_auto_toggle], outputs=[h_auto_toggle])
+        ai_auto_toggle.change(lambda x: x, inputs=[ai_auto_toggle], outputs=[ai_auto_toggle])
+
         show_debug_btn.click(lambda: gr.update(visible=not status_box.visible), outputs=[status_box])
         show_history_btn.click(lambda: gr.update(visible=not history_display.visible), outputs=[history_display])
 
