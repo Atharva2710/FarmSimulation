@@ -1,3 +1,12 @@
+---
+title: FarmSimulation
+emoji: 🌾
+colorFrom: green
+colorTo: green
+sdk: docker
+pinned: false
+---
+
 # 🌾 FarmSimulation: Precision Agriculture RL Environment
 
 > A physics-grounded Reinforcement Learning environment where AI agents must manage land plots, balance scarce water and capital, fight pests and drought, and time crop sales to volatile markets — just like real precision-agriculture AI.
