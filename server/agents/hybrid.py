@@ -153,8 +153,11 @@ class HybridAgent:
             if not api_token or not api_token.strip():
                 raise Exception("401: Unauthorized")
 
+            # Dynamic Model Support for Stress Testing
+            actual_model = os.getenv("MODEL_NAME", MODEL_NAME)
+
             response = self.client.chat.completions.create(
-                model=MODEL_NAME,
+                model=actual_model,
                 messages=[
                     {"role": "system", "content": self.system_prompt},
                     {"role": "user", "content": user_message}
