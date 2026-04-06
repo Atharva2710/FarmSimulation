@@ -1325,8 +1325,9 @@ def create_gradio_ui(env_factory):
                 gr.HTML("<hr style='margin: 32px 0; border-color: rgba(255,255,255,0.08)'>")
                 ai_history = gr.JSON(label="📝 Full Action History", visible=True)
 
-            with gr.Tab("📖 Documentation"):
-                gr.HTML(DOCS_HTML)
+            with gr.Tab("📖 Documentation") as doc_tab:
+                doc_html_content = gr.HTML("Loading documentation...")
+                doc_tab.select(lambda: DOCS_HTML, outputs=[doc_html_content])
 
         # Output states matching in update function
         # We need to update Dashboard, Heuristic Tab, and Hybrid Tab
@@ -1387,17 +1388,23 @@ def create_gradio_ui(env_factory):
                 )
                 reasoning = "*LLM Access Restricted*"
 
-            return tuple(
-                [out_hud] + out_plots + [out_seeds, out_storage, out_market, out_msg, out_history, out_json, metadata] +
-                [out_hud] + out_plots + [reasoning, status, out_market, out_history, obs.text_summary] +
-                [out_hud] + out_plots + [reasoning, status, out_market, out_history, ai_audit_msg, err_banner, obs.text_summary]
-            )
+            # Group the return values logically
+            dashboard_vals = [out_hud] + out_plots + [out_seeds, out_storage, out_market, out_msg, out_history, out_json, metadata]
+            heuristic_vals = [out_hud] + out_plots + [reasoning, status, out_market, out_history, obs.text_summary]
+            hybrid_vals    = [out_hud] + out_plots + [reasoning, status, out_market, out_history, ai_audit_msg, err_banner, obs.text_summary]
+            
+            return {
+                "dashboard": tuple(dashboard_vals),
+                "heuristic": tuple(heuristic_vals),
+                "hybrid":    tuple(hybrid_vals),
+                "all":       tuple(dashboard_vals + heuristic_vals + hybrid_vals)
+            }
 
         def handle_reset(tid):
             env = env_factory()
             os.environ["FARMING_TASK_ID"] = str(int(tid))
             env.reset(task_id=int(tid))
-            return get_status(reasoning="Environment Reset.")
+            return get_status(reasoning="Environment Reset.")["all"]
 
         def handle_action(action_type, p_id, qty, s_type):
             env = env_factory()
@@ -1446,32 +1453,32 @@ def create_gradio_ui(env_factory):
                 return get_status(reasoning=f"❌ ERROR: {str(e)}", status="🔴 CRASHED")
 
         # Event Handlers
-        ui.load(get_status, outputs=all_outputs)
+        ui.load(lambda: get_status()["all"], outputs=all_outputs)
         reset_btn.click(handle_reset, inputs=[task_id_input], outputs=all_outputs)
-        wait_btn.click(lambda p, q, s: handle_action("wait", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
-        buy_btn.click(lambda p, q, s: handle_action("buy_seeds", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
-        pump_btn.click(lambda p, q, s: handle_action("pump_water", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
-        plant_btn.click(lambda p, q, s: handle_action("plant", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
-        irrigate_btn.click(lambda p, q, s: handle_action("irrigate", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
-        harvest_btn.click(lambda p, q, s: handle_action("harvest", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
-        clear_btn.click(lambda p, q, s: handle_action("clear", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
-        fertilize_btn.click(lambda p, q, s: handle_action("apply_fertilizer", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
-        spray_btn.click(lambda p, q, s: handle_action("spray_pesticide", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
-        pull_weeds_btn.click(lambda p, q, s: handle_action("pull_weeds", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
-        sell_btn.click(lambda p, q, s: handle_action("sell", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
+        wait_btn.click(lambda p, q, s: handle_action("wait", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        buy_btn.click(lambda p, q, s: handle_action("buy_seeds", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        pump_btn.click(lambda p, q, s: handle_action("pump_water", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        plant_btn.click(lambda p, q, s: handle_action("plant", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        irrigate_btn.click(lambda p, q, s: handle_action("irrigate", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        harvest_btn.click(lambda p, q, s: handle_action("harvest", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        clear_btn.click(lambda p, q, s: handle_action("clear", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        fertilize_btn.click(lambda p, q, s: handle_action("apply_fertilizer", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        spray_btn.click(lambda p, q, s: handle_action("spray_pesticide", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        pull_weeds_btn.click(lambda p, q, s: handle_action("pull_weeds", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        sell_btn.click(lambda p, q, s: handle_action("sell", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
         
         # Agent Controls
-        h_step_btn.click(lambda s: handle_agent_step("heuristic", h_strategy=s), inputs=[h_strategy_input], outputs=all_outputs)
-        ai_step_btn.click(lambda t, s: handle_agent_step("ai", token=t, h_strategy=s), inputs=[hf_token_input, h_strategy_input], outputs=all_outputs)
+        h_step_btn.click(lambda s: handle_agent_step("heuristic", h_strategy=s)["heuristic"], inputs=[h_strategy_input], outputs=h_outputs)
+        ai_step_btn.click(lambda t, s: handle_agent_step("ai", token=t, h_strategy=s)["hybrid"], inputs=[hf_token_input, h_strategy_input], outputs=ai_outputs)
         h_reset.click(lambda t: handle_reset(t), inputs=[task_id_input], outputs=all_outputs)
         ai_reset.click(lambda t: handle_reset(t), inputs=[task_id_input], outputs=all_outputs)
 
         # Timer Logic for Auto-Play (Gradio 4)
         h_timer = gr.Timer(1.0, active=True)
-        h_timer.tick(lambda auto, s: handle_agent_step("heuristic", h_strategy=s) if auto else gr.skip(), inputs=[h_auto_toggle, h_strategy_input], outputs=all_outputs)
+        h_timer.tick(lambda auto, s: handle_agent_step("heuristic", h_strategy=s)["heuristic"] if auto else gr.skip(), inputs=[h_auto_toggle, h_strategy_input], outputs=h_outputs)
         
         ai_timer = gr.Timer(2.0, active=True) # AI is slower
-        ai_timer.tick(lambda auto, tok, s: handle_agent_step("ai", tok, h_strategy=s) if auto else gr.skip(), inputs=[ai_auto_toggle, hf_token_input, h_strategy_input], outputs=all_outputs)
+        ai_timer.tick(lambda auto, tok, s: handle_agent_step("ai", tok, h_strategy=s)["hybrid"] if auto else gr.skip(), inputs=[ai_auto_toggle, hf_token_input, h_strategy_input], outputs=ai_outputs)
         
         # Toggle Timers (Gradio 4 timers are active by default, so we control via logic)
         h_auto_toggle.change(lambda x: x, inputs=[h_auto_toggle], outputs=[h_auto_toggle])
