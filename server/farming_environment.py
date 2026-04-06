@@ -42,6 +42,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
     def __init__(self, task_id: int = 1):
         super().__init__()
         self.task_id = task_id
+        self._rng = random.Random()
 
         # these will all be set properly by reset()
         self._day:            int              = 0
@@ -134,8 +135,11 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
     ) -> FarmObservation:
 
         if seed is not None:
-            random.seed(seed)
+            self._rng.seed(seed)
             
+        # Also reset market impact for clean runs if requested
+        if kwargs.get("reset_market", True):
+            self._market_impact = {c: 1.0 for c in SEED_CONFIG}
         if task_id is not None:
             self.task_id = int(task_id)
 
@@ -498,6 +502,19 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         return 0.2   # small positive: agent committed to a plan
 
     def _handle_irrigate(self, action: FarmAction) -> float:
+        """
+        Applies water to a specific plot to counter evapotranspiration (ETc).
+        
+        Logic:
+        - Consumes IRRIGATION_COST (15L) from the water tank.
+        - Increases soil_moisture by +0.20 (20%).
+        - Ref: FAO-56 Chapter 6 (Crop Water Requirements).
+        
+        Rewards:
+        - +0.5: Rescue bonus if moisture was critically low (<0.25).
+        - +0.1: Maintenance bonus for proactive hydration.
+        - -0.5: Wasteful penalty if moisture > 0.8 (simulating over-saturation risk).
+        """
         if action.plot_id is None or not (0 <= action.plot_id <= 3):
             return -1.0
 
@@ -595,6 +612,19 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         return 0.0   # neutral action
 
     def _handle_sell(self, action: FarmAction) -> float:
+        """
+        Liquidates crop storage into capital using a dynamic price model.
+        
+        Economic Model (Almgren-Chriss Impact):
+        1. Temporary Impact (Slippage): Large orders execute below the current 
+           mid-price due to immediate liquidity depletion.
+           P_exec = P_mid * (1 - η * Qty) where η = 0.5% per 10kg.
+           
+        2. Permanent Impact: Large orders permanently shift the market price.
+           P_new = P_old * (1 - γ * Qty) where γ = 1% per 10kg.
+        
+        Reference: Almgren & Chriss (2000), "Optimal execution of portfolio transactions".
+        """
         if action.seed_type is None or action.seed_type not in SEED_CONFIG:
             return -1.0
         if action.quantity is None or action.quantity <= 0:
@@ -609,16 +639,22 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         if qty <= 0.0:
             return -1.0   # nothing to sell
 
-        price   = self._market_prices[crop].sell_price
-        revenue = price * qty
+        mid_price = self._market_prices[crop].sell_price
+        
+        # 1. Temporary Market Impact (Slippage)
+        # 0.5% slippage per 10kg sold
+        slippage_pct = (qty / 10.0) * 0.005 
+        execution_price = mid_price * (1.0 - slippage_pct)
+        revenue = execution_price * qty
 
         self._storage[crop] -= qty
         self._money         += revenue
 
-        # Market elasticity: large sales crash the price
-        # Price drops 1% for every 10kg sold, max 50% drop
+        # 2. Permanent Market Impact (Almgren-Chriss inspired)
+        # 1% permanent impact per 10kg, max 50% cumulative drop
         price_drop = min(0.5, (qty / 10.0) * 0.01)
-        self._market_prices[crop].sell_price *= (1.0 - price_drop)
+        self._market_impact[crop] *= (1.0 - price_drop)
+        self._market_impact[crop] = max(0.5, self._market_impact[crop])
 
         # reward scales with revenue relative to base price
         base_revenue    = SEED_CONFIG[crop]["base_sell"] * qty
@@ -629,7 +665,8 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             "day":        self._day,
             "crop":       crop,
             "qty":        qty,
-            "price":      price,
+            "price":      execution_price,
+            "mid_price":  mid_price,
             "base_price": SEED_CONFIG[crop]["base_sell"],
         })
 
@@ -829,7 +866,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             # sine wave period = 20 days, offset per seed to desync them
             offsets = {"wheat": 0, "rice": 7, "corn": 13}
             wave    = math.sin((self._day + offsets[seed]) * 2 * math.pi / 20)
-            noise   = random.uniform(-noise_mult, noise_mult)
+            noise   = self._rng.uniform(-noise_mult, noise_mult)
 
             # sell price swings ±20% around base + noise from difficulty
             new_sell  = cfg["base_sell"] * (1.0 + 0.2 * wave + noise)
@@ -856,6 +893,21 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             )
 
     def _advance_day(self) -> None:
+        """
+        The 5-Pass Physics Core. Runs a daily lifecycle simulation.
+        
+        This method implements the core agricultural and economic physics:
+        1. 🌊 Hydrology: Precipitation fills the aquifer and water tank. Recharge is 
+           halved during drought events to simulate groundwater depletion.
+        2. 🏜️ Pedology: Soil moisture evaporates based on ETc (FAO-56 formula). 
+           Evaporation is non-linear—wetter soil dries faster, simulating saturation vapor pressure.
+        3. 🦠 Ecology: Pests and weeds spawn based on temperature/humidity. Pests exhibit 
+           exponential growth (cascading infestations) if not treated.
+        4. 🪴 Physiology: Crop health updates daily based on hydric stress, nutrient 
+           deficiency, and ecological damage. Plants can recover if stressors are removed.
+        5. 💰 Economics: Market prices drift following a sinusoidal seasonal trend 
+           with added difficulty-specific noise.
+        """
         self._day += 1
         idx          = (self._day // CLIMATE_ROTATION_DAYS) % len(CLIMATE_ROTATION)
         climate_name = CLIMATE_ROTATION[idx]
@@ -866,16 +918,16 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         rain_chances = {"temperate": 0.4, "arid": 0.1, "tropical": 0.7}
         chance = rain_chances.get(climate_name, 0.4)
         
-        if random.random() < chance:
+        if self._rng.random() < chance:
             # It rains! Amount is a range around the base precip
-            self._current_precip = cfg["precip"] * random.uniform(0.5, 2.0)
+            self._current_precip = cfg["precip"] * self._rng.uniform(0.5, 2.0)
             self._current_humidity = min(1.0, cfg["humidity"] * 1.2)
-            self._current_temp = cfg["temp"] - random.uniform(2, 5) # Raining is cooler
+            self._current_temp = cfg["temp"] - self._rng.uniform(2, 5) # Raining is cooler
         else:
             # Sunny/Cloudy day
             self._current_precip = 0.0
-            self._current_humidity = cfg["humidity"] * random.uniform(0.8, 1.0)
-            self._current_temp = cfg["temp"] + random.uniform(-2, 5) # Sunny can be hotter
+            self._current_humidity = cfg["humidity"] * self._rng.uniform(0.8, 1.0)
+            self._current_temp = cfg["temp"] + self._rng.uniform(-2, 5) # Sunny can be hotter
 
         # 1. refill aquifer and water tank from precipitation
         task_cfg = self._task_config()
@@ -904,7 +956,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
 
             # Weeds can grow on empty plots now!
             if plot.stage == "empty":
-                if random.random() < 0.05: # lower chance for empty plots
+                if self._rng.random() < 0.05: # lower chance for empty plots
                     plot.has_weeds = True
                 continue
 
@@ -912,7 +964,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             plot.pesticide_protection = max(0, plot.pesticide_protection - 1)
 
             # weeds and pests spawning
-            if random.random() < 0.15:
+            if self._rng.random() < 0.15:
                 plot.has_weeds = True
             
             # pests thrive in high humidity or high heat
@@ -923,11 +975,11 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
                 spawn_chance += 0.1
                 
             # BLOCK SPONTANEOUS INFESTATION IF PROTECTED
-            if plot.pesticide_protection == 0 and random.random() < spawn_chance:
+            if plot.pesticide_protection == 0 and self._rng.random() < spawn_chance:
                 plot.has_pests = True
             
             # Natural Pest Decay: pests die in extreme cold
-            if self._current_temp < 10.0 and plot.has_pests and random.random() < 0.3:
+            if self._current_temp < 10.0 and plot.has_pests and self._rng.random() < 0.3:
                 plot.has_pests = False
                 plot.pest_severity = 0.0
                 
@@ -1052,6 +1104,10 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             self._storage[crop] = max(0.0, self._storage[crop] - loss)
 
         # 5. update market prices
+        # slow impact recovery (0.5% per day)
+        for seed in SEED_CONFIG:
+            self._market_impact[seed] = min(1.0, self._market_impact[seed] + 0.005)
+
         self._update_market_prices()
 
     # ── observation builder ──────────────────────────────────────────────
@@ -1161,6 +1217,11 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             f"{water_icon} **Water Tank:** `{water_pct:.1%}` ({self._water_tank:.1f}L / {WATER_TANK_CAPACITY:.0f}L) | **Runway:** `{runway:.1f} days`",
             f"🌊 **Aquifer:** `{self._aquifer:.1f}L` | **Ref ET (ETo):** `{eto:.3f}`",
             f"{weather_icon} **Climate:** {climate.climate_type.upper()} ({climate.temperature:.1f}°C, {climate.humidity:.0%} Hum)",
+            "",
+            "#### 📊 ENVIRONMENTAL RISK ASSESSMENT",
+            f"- **Hydric Stress:** {'🔴 CRITICAL' if runway < 2 else '🟡 MODERATE' if runway < 5 else '🟢 LOW'}",
+            f"- **Evaporative Demand:** {'🔥 HIGH' if eto > 0.1 else '🌤️ MODERATE' if eto > 0.05 else '☁️ LOW'}",
+            f"- **Pest Pressure:** {'⚠️ ESCALATING' if any(p.has_pests for p in self._plots) else '✅ CLEAR'}",
         ]
         
         # Add action feedback message

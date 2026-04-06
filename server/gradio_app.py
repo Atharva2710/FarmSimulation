@@ -1326,8 +1326,7 @@ def create_gradio_ui(env_factory):
                 ai_history = gr.JSON(label="📝 Full Action History", visible=True)
 
             with gr.Tab("📖 Documentation") as doc_tab:
-                doc_html_content = gr.HTML("Loading documentation...")
-                doc_tab.select(lambda: DOCS_HTML, outputs=[doc_html_content])
+                doc_html_content = gr.HTML(DOCS_HTML)
 
         # Output states matching in update function
         # We need to update Dashboard, Heuristic Tab, and Hybrid Tab
@@ -1469,13 +1468,9 @@ def create_gradio_ui(env_factory):
         # Event Handlers
         # Fix 1: Only load Dashboard outputs on startup — not all 30+ outputs.
         # Loading all_outputs on ui.load blocks the WebSocket queue and freezes tab switching.
-        ui.load(lambda: get_status()["dashboard"], outputs=base_outputs)
+        ui.load(lambda: get_status()["all"], outputs=all_outputs)
 
-        # Fix 5: Lazy-load agent tabs only when the user actually clicks on them.
-        # Previously nothing populated these tabs until a button was clicked, causing
-        # them to show stale "Loading..." placeholders. Now they hydrate on tab select.
-        h_tab.select(lambda: get_status()["heuristic"], outputs=h_outputs)
-        ai_tab.select(lambda: get_status()["hybrid"], outputs=ai_outputs)
+        # Fix 5: Agent tabs now populate on initial load — preventing recursive selective loops.
         reset_btn.click(handle_reset, inputs=[task_id_input], outputs=base_outputs)
         wait_btn.click(lambda p, q, s: handle_action("wait", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
         buy_btn.click(lambda p, q, s: handle_action("buy_seeds", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
