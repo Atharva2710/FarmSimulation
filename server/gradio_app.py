@@ -4,9 +4,8 @@ import json
 import asyncio
 import time
 import textwrap
-from agents import HeuristicAgent, HybridAgent
-from server.scenario_engine import ScenarioEngine
-from server.scenario_definitions import SCENARIOS
+from server.agents.heuristic import HeuristicAgent
+from server.agents.hybrid import HybridAgent
 
 # ── STATE MANAGEMENT (HONEY-STYLE) ──────────────────────────────────────────
 class UIState:
@@ -14,6 +13,7 @@ class UIState:
         self.reasoning = ""
         self.status = "🟢 READY"
         self.is_processing = False
+        self.auto_play = False
 
 state = UIState()
 
@@ -1226,50 +1226,36 @@ def create_gradio_ui(env_factory):
             # reactive loops and connection timeouts on HuggingFace Spaces.
             # Automated agents can still access the environment via the REST API.
 
-            with gr.Tab("🧪 AGENT STRESS TEST") as stress_tab:
-                gr.Markdown("### 🛠️ CONFIGURATION & CALIBRATION")
+            with gr.Tab("🤖 AUTO-HEURISTIC") as heuristic_tab:
+                gr.Markdown("### 🧠 HEURISTIC INTELLIGENCE ENGINE")
                 with gr.Row():
                     with gr.Column(scale=1):
-                        st_token = gr.Textbox(label="HuggingFace Token", type="password", placeholder="hf_...", value=os.getenv("HF_TOKEN", ""))
-                        st_model = gr.Dropdown(
-                            label="Model Endpoint",
-                            choices=[
-                                "Qwen/Qwen2.5-72B-Instruct", 
-                                "Qwen/Qwen2.5-7B-Instruct", 
-                                "meta-llama/Llama-3.3-70B-Instruct",
-                                "deepseek-ai/DeepSeek-V3"
-                            ],
-                            value="Qwen/Qwen2.5-72B-Instruct",
-                            allow_custom_value=True
-                        )
-                        st_seed = gr.Number(label="Random Seed (Consistency)", value=42, precision=0)
-                        st_agent = gr.Radio(["Heuristic", "Hybrid"], label="Target Agent", value="Heuristic")
-                        st_diff = gr.Slider(0, 3, value=0, step=1, label="Difficulty Filter (0=All)")
-                        st_run_btn = gr.Button("🔥 START STRESS TEST", variant="primary")
+                        h_mode = gr.Dropdown(["physics", "legacy"], label="Heuristic Mode", value="physics")
+                        h_status = gr.Markdown("### Status: `IDLE`", elem_classes=["section-box"])
+                        h_step_btn = gr.Button("🎲 STEP AGENT", variant="primary")
+                        h_auto_toggle = gr.Checkbox(label="🚀 AUTO-PLAY (Loop)", value=False)
+                        h_interval = gr.Slider(0.1, 5.0, value=1.0, step=0.1, label="Step Interval (s)")
                     
                     with gr.Column(scale=2):
-                        st_gauge = gr.HTML(value="<div style='text-align:center; padding: 20px; background: #1a1a1a; border-radius: 15px; border: 1px solid #333;'><h3 style='color: #888;'>Intelligence Pass Rate</h3><h1 style='font-size:5em; margin: 10px 0; color: #4caf50;'>--%</h1><p style='color: #666;'>Select configuration and click START</p></div>")
-                        st_progress_md = gr.Markdown("### Status: `IDLE`")
+                        h_hud_md = gr.Markdown("Loading AI Context...", elem_classes=["section-box"])
+                        h_reasoning = gr.Textbox(label="AI Internal Reasoning", lines=5, interactive=False, elem_classes=["audit-box"])
+                        h_summary = gr.Markdown("### Strategic Summary", elem_classes=["section-box"])
                 
                 gr.Markdown("---")
-                st_results = gr.Dataframe(
-                    headers=["ID", "Scenario", "Dif", "Expected", "Actual", "Status", "Duration (s)"],
-                    datatype=["number", "str", "number", "str", "str", "str", "number"],
-                    label="Execution Trace",
-                    interactive=False
-                )
+                # Secondary HUD for the Heuristic Tab
+                with gr.Row():
+                    h_plots = [gr.HTML() for _ in range(4)]
 
             with gr.Tab("📖 Documentation") as doc_tab:
                 doc_html_content = gr.HTML(DOCS_HTML)
 
-        # dashboard_vals (12): hud, plot×4, seeds, storage, market, action_feed, history(dict), json(str), metadata(dict)
+        # dashboard_vals (12): hud, plot×4, seeds, storage, market, action_feed, history, json, stats
         base_outputs = [hud_md] + plot_mds + [seeds_md, storage_md, market_md, action_feed, history_display, status_box, episode_stats]
 
-        # ⚠️ Agent outputs disabled for stability on HuggingFace ⚠️
-        # h_outputs = [...]
-        # ai_outputs = [...]
-
-        all_outputs = base_outputs 
+        # Outputs for Heuristic Tab
+        h_outputs = [h_hud_md] + h_plots + [h_reasoning, h_status, h_summary]
+        
+        all_outputs = base_outputs + h_outputs
 
         # Agent Instances
         h_agent = HeuristicAgent()
@@ -1393,49 +1379,56 @@ def create_gradio_ui(env_factory):
         spray_btn.click(do_spray, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
         pull_weeds_btn.click(do_pull_weeds, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
         sell_btn.click(do_sell, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        # ── Stress Test Logic ───────────────────────────────────────────
+        # ── Heuristic Loop Logic ──────────────────────────────────────────
         
-        async def run_stress_test(token, model, seed, agent_type, diff):
-            # Instantiate Agent
-            agent = HybridAgent() if agent_type == "Hybrid" else HeuristicAgent()
-            engine = ScenarioEngine(agent)
+        async def run_h_step(mode):
+            env = env_factory()
+            obs = env.get_observation()
+            action, thought = h_agent.act(obs, mode=mode)
+            env.step(action)
             
-            # Filter diff
-            d_val = int(diff) if diff > 0 else None
-            
-            # Execute
-            report_gen = engine.run_tests_stream(difficulty=d_val, seed=int(seed), hf_token=token, model_name=model)
-            
-            df_data = []
-            async for result in report_gen:
-                if "summary" in result:
-                    summary = result["summary"]
-                    score = summary["score"]
-                    color = "#f44336" if score < 50 else ("#ffeb3b" if score < 80 else "#4caf50")
-                    gauge_html = f"""
-                    <div style='text-align:center; padding: 20px; background: #0f172a; border-radius: 12px; border: 1px solid #1e293b;'>
-                        <h3 style='color: #94a3b8;'>Intelligence Pass Rate</h3>
-                        <h1 style='font-size:5em; margin: 10px 0; color: {color};'>{score:.0f}%</h1>
-                        <p style='color: #64748b;'>{summary['passed']} Passed | {summary['failed']} Failed</p>
-                    </div>
-                    """
-                    progress = f"### Status: `COMPLETE` ({summary['total']} scenarios evaluated)"
-                    yield gauge_html, progress, df_data
-                else:
-                    # Individual scenario result
-                    r = result
-                    df_data.append([
-                        r["id"], r["name"], r["difficulty"], 
-                        ", ".join(r["expected"]), r["actual"], 
-                        r["status"], r["duration"]
-                    ])
-                    yield gr.update(), f"### Status: `EVALUATING` (Scenario {r['id']}...)", df_data
-                    await asyncio.sleep(0.01)
+            async for update in get_status(reasoning=thought, status=f"AI: {action.get('action_type', '').upper()}"):
+                hud = update[0]
+                plots = update[1:5]
+                summary = env_factory().get_observation().text_summary
+                yield update + [hud] + list(plots) + [thought, f"### Status: `AI ACTIVE`", summary]
 
-        st_run_btn.click(
-            run_stress_test, 
-            inputs=[st_token, st_model, st_seed, st_agent, st_diff], 
-            outputs=[st_gauge, st_progress_md, st_results]
+        async def handle_auto_toggle(is_active, mode, interval):
+            if is_active:
+                state.auto_play = True
+                # Initial state: [h_status, h_auto_toggle] + base_outputs + h_outputs (Total 22)
+                yield [gr.update(value="### Status: `AUTO-PLAYING`"), gr.update()] + [gr.update()]*20
+                
+                while state.auto_play:
+                    env = env_factory()
+                    obs = env.get_observation()
+                    action, thought = h_agent.act(obs, mode=mode)
+                    env.step(action)
+                    
+                    async for update in get_status(reasoning=thought, status=f"AI: {action.get('action_type', '').upper()}"):
+                        if not state.auto_play: break
+                        hud = update[0]
+                        plots = update[1:5]
+                        summary = env.text_summary
+                        # yield correct number of outputs (22 total)
+                        # status(1) + toggle(1) + base(12) + h_hud(1) + h_plots(4) + h_reason(1) + h_status(1) + h_sum(1)
+                        yield [gr.update(value="### Status: `AUTO-PLAYING`"), gr.update()] + update + [hud] + list(plots) + [thought, f"### Status: AI ACTIVE", summary]
+                    
+                    if not state.auto_play: break
+                    await asyncio.sleep(interval or 1.0)
+                
+                yield [gr.update(value="### Status: `HALTED`"), gr.update()] + [gr.update()]*20
+            else:
+                state.auto_play = False
+                yield [gr.update(value="### Status: `HALTED`"), gr.update()] + [gr.update()]*20
+
+        h_step_btn.click(run_h_step, inputs=[h_mode], outputs=base_outputs + h_outputs)
+        
+        h_auto_toggle.change(
+            fn=handle_auto_toggle,
+            inputs=[h_auto_toggle, h_mode, h_interval],
+            outputs=[h_status, h_auto_toggle] + base_outputs + h_outputs,
+            queue=True
         )
 
         # Agent logic removed from UI
