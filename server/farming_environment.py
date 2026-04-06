@@ -304,7 +304,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             reward += reward_change
             plot = getattr(action, 'plot_id', 0) or 0
             seed = getattr(action, 'seed_type', "") or ""
-            self._action_message = f"🧑‍🌾 Planted {seed} in Plot {plot}!" if reward_change >= 0 else f"❌ Failed to plant Plot {plot}!"
+            self._action_message = f"Planted {seed} in Plot {plot}!" if reward_change >= 0 else f"Failed to plant Plot {plot}!"
         elif act == "irrigate":
             reward_change = self._handle_irrigate(action)
             reward += reward_change
@@ -348,7 +348,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         elif act == "wait":
             cost = ACTION_LABOR_COSTS.get("wait", 1.0)
             reward += self._handle_wait()
-            self._action_message = f"🧘‍♂️ Resting... ({cost}h)"
+            self._action_message = f"Resting... ({cost}h)"
         else:
             reward += -1.0
             self._action_message = f"❓ Unknown action"
@@ -1103,33 +1103,37 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
     # ── observation builder ──────────────────────────────────────────────
 
     def _build_valid_actions(self) -> List[str]:
-        actions = ["wait", "end_day"]
+        costs = ACTION_LABOR_COSTS
+        actions = [f"wait [Cost: {costs['wait']}h]", f"end_day [Cost: 0.0h]"]
+        
         if self._aquifer > 0 and self._water_tank < WATER_TANK_CAPACITY and self._money >= PUMP_COST:
-            actions.append("pump_water")
-        actions.append("buy_seeds(seed_type=wheat/rice/corn, quantity=N)")
+            actions.append(f"pump_water [Cost: {costs['pump_water']}h]")
+            
+        actions.append(f"buy_seeds(seed_type, quantity) [Cost: {costs['buy_seeds']}h]")
 
         for plot in self._plots:
+            p_id = plot.plot_id
             if plot.stage == "empty":
-                actions.append(f"plant(plot_id={plot.plot_id}, seed_type=wheat/rice/corn)")
+                actions.append(f"plant(plot_id={p_id}, seed_type) [Cost: {costs['plant']}h]")
             elif plot.stage == "mature":
-                actions.append(f"harvest(plot_id={plot.plot_id})")
+                actions.append(f"harvest(plot_id={p_id}) [Cost: {costs['harvest']}h]")
             elif plot.stage == "withered":
-                actions.append(f"clear(plot_id={plot.plot_id})")
+                actions.append(f"clear(plot_id={p_id}) [Cost: {costs['clear']}h]")
 
             if plot.stage not in ("empty", "withered"):
                 if plot.soil_moisture <= 0.81:
-                    actions.append(f"irrigate(plot_id={plot.plot_id})")
+                    actions.append(f"irrigate(plot_id={p_id}) [Cost: {costs['irrigate']}h]")
                 if plot.nitrogen < 0.8 or plot.phosphorus < 0.8 or plot.potassium < 0.8:
                     if self._money >= FERTILIZER_COST:
-                        actions.append(f"apply_fertilizer(plot_id={plot.plot_id})")
+                        actions.append(f"apply_fertilizer(plot_id={p_id}) [Cost: {costs['apply_fertilizer']}h]")
                 if plot.has_pests and self._money >= PESTICIDE_COST:
-                    actions.append(f"spray_pesticide(plot_id={plot.plot_id})")
+                    actions.append(f"spray_pesticide(plot_id={p_id}) [Cost: {costs['spray_pesticide']}h]")
                 if plot.has_weeds:
-                    actions.append(f"pull_weeds(plot_id={plot.plot_id})")
+                    actions.append(f"pull_weeds(plot_id={p_id}) [Cost: {costs['pull_weeds']}h]")
 
         for crop, qty in self._storage.items():
             if qty > 0:
-                actions.append(f"sell(seed_type={crop}, quantity=N)")
+                actions.append(f"sell(seed_type={crop}, quantity) [Cost: {costs['sell']}h]")
 
         return actions
 
@@ -1138,55 +1142,31 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         climate = self._current_climate()
         water_pct = self._water_tank / WATER_TANK_CAPACITY
         
-        # Dynamic farmer pose
-        farmer_poses = {
-            "idle": "👨‍🌾",
-            "wait": "🧘‍♂️",
-            "pump_water": "⚙️",
-            "buy_seeds": "🛒",
-            "plant": "🧑‍🌾",
-            "irrigate": "💧",
-            "harvest": "🌾",
-            "sell": "💰",
-            "clear": "🧹",
-            "apply_fertilizer": "🌱",
-            "spray_pesticide": "🦟",
-            "pull_weeds": "🤲",
-        }
-        farmer = farmer_poses.get(self._last_action, "👨‍🌾")
+        farmer = f"[{self._last_action.upper() if self._last_action else 'IDLE'}]"
         
-        # Dynamic money display with trend
         money_trend = ""
         if self._last_money_change > 50:
-            money_trend = " 🎉"  # Big profit!
+            money_trend = " (High Profit)"
         elif self._last_money_change > 0:
-            money_trend = " ↗️"
+            money_trend = " (+)"
         elif self._last_money_change < -50:
-            money_trend = " ⚠️"  # Big loss!
+            money_trend = " (High Cost)"
         elif self._last_money_change < 0:
-            money_trend = " ↘️"
+            money_trend = " (-)"
         
         if self._money < 50:
-            money_trend += " 🚨"  # Low funds warning
-
-        # Dynamic water tank with icons
-        water_icon = "💧🌊" if water_pct > 0.8 else "💧" if water_pct > 0.3 else "🏜️"
+            money_trend += " [LOW FUNDS]"
 
         # Weather indicators based on dynamic values
-        weather_icon = "☀️"
         weather_desc = "Clear"
         if climate.precipitation > 8.0:
-            weather_icon = "⛈️"
             weather_desc = "Stormy"
         elif climate.precipitation > 2.0:
-            weather_icon = "🌧️"
             weather_desc = "Rainy"
         elif climate.humidity > 0.8:
-            weather_icon = "☁️"
             weather_desc = "Cloudy"
         
         if self._drought_active:
-            weather_icon = "🔥"
             weather_desc = "DROUGHT"
 
         # FAO-56 Physics & Economics
@@ -1202,53 +1182,49 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         runway = (self._water_tank / total_etc) if total_etc > 0 else 99
         
         lines = [
-            f"### Day {self._day} / {self._max_days} | Labor: **{self._labor_hours:.0f} hours remaining**",
-            f"💰 **Net Worth:** `${net_worth:.2f}` (Cash: `${self._money:.2f}` + Assets: `${total_storage_value + inventory_value:.2f}`)",
-            f"{water_icon} **Water Tank:** `{water_pct:.1%}` ({self._water_tank:.1f}L / {WATER_TANK_CAPACITY:.0f}L) | **Runway:** `{runway:.1f} days`",
-            f"🌊 **Aquifer:** `{self._aquifer:.1f}L` | **Ref ET (ETo):** `{eto:.3f}`",
-            f"{weather_icon} **Climate:** {climate.climate_type.upper()} ({climate.temperature:.1f}°C, {climate.humidity:.0%} Hum)",
+            f"### Day {self._day} / {self._max_days} | Labor: **{self._labor_hours:.1f}h remaining**",
+            f"Net Worth: `${net_worth:.2f}` (Cash: `${self._money:.2f}` + Assets: `${total_storage_value + inventory_value:.2f}`){money_trend}",
+            f"Water Tank: `{water_pct:.1%}` ({self._water_tank:.1f}L / {WATER_TANK_CAPACITY:.0f}L) | Runway: `{runway:.1f} days`",
+            f"Aquifer: `{self._aquifer:.1f}L` | Ref ET (ETo): `{eto:.3f}`",
+            f"Climate: {climate.climate_type.upper()} ({climate.temperature:.1f}C, {climate.humidity:.0%} Hum)",
             "",
-            "#### 📊 ENVIRONMENTAL RISK ASSESSMENT",
-            f"- **Hydric Stress:** {'🔴 CRITICAL' if runway < 2 else '🟡 MODERATE' if runway < 5 else '🟢 LOW'}",
-            f"- **Evaporative Demand:** {'🔥 HIGH' if eto > 0.1 else '🌤️ MODERATE' if eto > 0.05 else '☁️ LOW'}",
-            f"- **Pest Pressure:** {'⚠️ ESCALATING' if any(p.has_pests for p in self._plots) else '✅ CLEAR'}",
+            "#### ENVIRONMENTAL RISK ASSESSMENT",
+            f"- Hydric Stress: {'CRITICAL' if runway < 2 else 'MODERATE' if runway < 5 else 'LOW'}",
+            f"- Evaporative Demand: {'HIGH' if eto > 0.1 else 'MODERATE' if eto > 0.05 else 'LOW'}",
+            f"- Pest Pressure: {'WARNING' if any(p.has_pests for p in self._plots) else 'CLEAR'}",
         ]
         
         # Add action feedback message
         if self._action_message:
-            lines.append(f"**💬 {self._action_message}**")
+            lines.append(f"**Action Feedback: {self._action_message}**")
         
         lines.extend([
             "<hr>",
-            "#### 🚜 PLOT STATUS",
+            "#### PLOT STATUS",
         ])
         
         for plot in self._plots:
             if plot.stage == "empty":
                 # Show prepared soil if recently cleared
-                plot_icon = "🟫" if self._last_action == "clear" else "⬜"
-                lines.append(f"  * **Plot {plot.plot_id}:** {plot_icon} empty")
+                plot_status = "[CLEARED]" if self._last_action == "clear" else "[EMPTY]"
+                lines.append(f"  * **Plot {plot.plot_id}:** {plot_status}")
             else:
                 seed_cfg = SEED_CONFIG[plot.crop_type]
                 grow_days = int(seed_cfg["grow_days"])
                 
                 # Dynamic plot animations
                 if plot.stage == "mature":
-                    status = "**READY TO HARVEST** ✨"
+                    status = "**READY TO HARVEST**"
                 elif plot.stage == "withered":
-                    status = "**WITHERED** 💀"
+                    status = "**WITHERED**"
                 else:
                     status = f"Growth: {plot.days_planted}/{grow_days} days"
-                    if self._last_action == "plant" and plot.stage == "seedling":
-                        status += " ✨"
-                    elif self._last_action == "irrigate" and plot.soil_moisture > 0.6:
-                        status += " 💦"
                         
                 warnings = []
                 if plot.has_weeds:
-                    warnings.append("🌿 Weeds!")
+                    warnings.append("WEEDS")
                 if plot.has_pests:
-                    warnings.append(f"🐛 Pests! (Sev: {plot.pest_severity:.1f})")
+                    warnings.append(f"PESTS (Sev: {plot.pest_severity:.1f})")
                 warnings_str = " | ".join(warnings)
                 if warnings_str:
                     warnings_str = " | " + warnings_str
@@ -1268,11 +1244,11 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         # Market mood indicator
         avg_trend = sum(p.trend for p in self._market_prices.values()) / len(self._market_prices)
         if avg_trend > 0.1:
-            market_mood = "📈🐂 Bull Market!"
+            market_mood = "BULL"
         elif avg_trend < -0.1:
-            market_mood = "📉🐻 Bear Market"
+            market_mood = "BEAR"
         else:
-            market_mood = "📊➡️ Stable"
+            market_mood = "STABLE"
         
         # 📈 MARKET INTELLIGENCE (ROI & BASE PRICING)
         market_rows = []
@@ -1286,19 +1262,26 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             avg_7d = sum(history) / len(history) if history else p.sell_price
             market_rows.append(f"  * **{s.upper()}**: Current ${p.sell_price:.2f} (7d Avg: ${avg_7d:.2f}) | {premium:+.0f}% Prem | Trend: {trend_icon}")
         
-        lines.append("\n#### 📈 MARKET INTELLIGENCE\n" + "\n".join(market_rows) + f"\n\n**Mood:** {market_mood}")
+        lines.append("\n#### MARKET INTELLIGENCE\n" + "\n".join(market_rows) + f"\n\n**Mood:** {market_mood}")
         
         # Resources & Storage
         lines.append("<hr>")
         inv = " | ".join(f"**{s}**: {q}" for s, q in self._seed_inventory.items())
-        lines.append(f"🎒 **SEEDS:** {inv}")
+        lines.append(f"SEEDS: {inv}")
         
         store = " | ".join(f"**{s}**: {q:.1f}kg" for s, q in self._storage.items())
-        lines.append(f"🌾 **STORAGE:** {store}")
+        lines.append(f"STORAGE: {store}")
         
         if self._drought_active:
-            lines.append("\n⚠️ **WARNING: DROUGHT ACTIVE**")
+            lines.append("\nWARNING: DROUGHT ACTIVE")
             
+        # 🧪 LABOR GUIDE (for Strategic Reasoning)
+        guide = []
+        for act, cost in ACTION_LABOR_COSTS.items():
+            if act != "end_day":
+                guide.append(f"{act}: {cost}h")
+        lines.append("\n#### LABOR GUIDE\n" + " | ".join(guide))
+
         return "\n\n".join(lines)
 
     def _build_observation(
