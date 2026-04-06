@@ -1468,7 +1468,7 @@ def create_gradio_ui(env_factory):
         # Event Handlers
         # Fix 1: Only load Dashboard outputs on startup — not all 30+ outputs.
         # Loading all_outputs on ui.load blocks the WebSocket queue and freezes tab switching.
-        ui.load(lambda: get_status()["all"], outputs=all_outputs)
+        ui.load(lambda: get_status()["dashboard"], outputs=base_outputs)
 
         # Fix 5: Agent tabs now populate on initial load — preventing recursive selective loops.
         reset_btn.click(handle_reset, inputs=[task_id_input], outputs=base_outputs)
@@ -1490,6 +1490,12 @@ def create_gradio_ui(env_factory):
         # Fix 2b: h_reset and ai_reset should only update their own tab's outputs
         h_reset.click(lambda t: handle_reset_heuristic(t), inputs=[task_id_input], outputs=h_outputs)
         ai_reset.click(lambda t: handle_reset_hybrid(t), inputs=[task_id_input], outputs=ai_outputs)
+
+        # Lazy-load agent tabs only when they are first selected.
+        # This prevents all 30+ outputs being updated simultaneously on startup,
+        # which is what triggers Svelte's effect_update_depth_exceeded infinite loop.
+        h_tab.select(lambda: get_status()["heuristic"], outputs=h_outputs)
+        ai_tab.select(lambda: get_status()["hybrid"], outputs=ai_outputs)
 
         # Timer Logic for Auto-Play (Gradio 4)
         h_timer = gr.Timer(1.0, active=False)
