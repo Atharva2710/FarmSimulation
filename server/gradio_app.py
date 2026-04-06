@@ -1,33 +1,43 @@
 import gradio as gr
 import os
 import json
+import asyncio
 import time
 import textwrap
 from agents import HeuristicAgent, HybridAgent
 from server.scenario_engine import ScenarioEngine
 from server.scenario_definitions import SCENARIOS
 
+# ── STATE MANAGEMENT (HONEY-STYLE) ──────────────────────────────────────────
+class UIState:
+    def __init__(self):
+        self.reasoning = ""
+        self.status = "🟢 READY"
+        self.is_processing = False
+
+state = UIState()
+
 custom_css = """
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Syne:wght@700;800&family=DM+Mono:wght@400;500&display=swap');
 
 /* ── ROOT TOKENS ──────────────────────────────────────── */
 :root {
-    --bg:          #0a0f0a;
-    --panel:       rgba(14, 22, 14, 0.92);
-    --border:      rgba(34, 197, 94, 0.13);
-    --border-hi:   rgba(34, 197, 94, 0.35);
-    --code-bg:     rgba(0, 0, 0, 0.4);
-    --green:       #22c55e;
-    --green-dim:   #16a34a;
-    --green-glow:  rgba(34, 197, 94, 0.15);
+    --bg:          #0b0f19;
+    --panel:       rgba(15, 23, 42, 0.9);
+    --border:      rgba(30, 41, 59, 0.5);
+    --border-hi:   #10b981;
+    --code-bg:     #0f172a;
+    --green:       #10b981;
+    --green-dim:   #059669;
+    --green-glow:  rgba(16, 185, 129, 0.1);
     --amber:       #f59e0b;
-    --text:        #ddeedd;
-    --muted:       #5a7a5a;
-    --font-sans:   'Inter', system-ui, -apple-system, sans-serif;
-    --font-mono:   'DM Mono', monospace;
+    --text:        #e2e8f0;
+    --muted:       #94a3b8;
+    --font-sans:   'Inter', sans-serif;
+    --font-mono:   'JetBrains Mono', monospace;
     --font-head:   'Syne', sans-serif;
-    --r:           14px;
-    --rl:          20px;
+    --r:           12px;
+    --rl:          16px;
 }
 
 /* ── GLOBAL ──────────────────────────────────────────── */
@@ -1265,7 +1275,10 @@ def create_gradio_ui(env_factory):
         h_agent = HeuristicAgent()
         ai_agent = HybridAgent()
 
-        def get_status(reasoning="", status="🟢 READY"):
+        async def get_status(reasoning=None, status=None):
+            if reasoning is not None: state.reasoning = reasoning
+            if status is not None: state.status = status
+            
             env = env_factory()
             obs = env.get_observation()
             metadata = env.get_metadata()
@@ -1281,59 +1294,41 @@ def create_gradio_ui(env_factory):
             out_json = prettify_observation_json(obs)
             
             # Agent Reasoning Integration
-            os.environ["CURRENT_AGENT_REASONING"] = reasoning
+            os.environ["CURRENT_AGENT_REASONING"] = state.reasoning
             out_hud = format_hud(obs, metadata)
             
-            # AI Audit Formatting
+            # Wave 1: Immediate HUD & Plots
+            yield [out_hud] + out_plots + [out_seeds, out_storage, out_market, out_msg, out_history, out_json, metadata]
+            
+            # Brief pause to let Svelte breathe on HF
+            await asyncio.sleep(0.05)
+            
+            # Wave 2: Heavier payload (JSON/Audit)
             ai_audit_msg = "*Awaiting first AI action...*"
             last_history = metadata.get("action_history", [])
             if last_history:
                 last_act = last_history[-1].get("action", {})
                 fidelity = last_act.get("fidelity")
                 tactical = last_act.get("tactical")
-                
                 if fidelity and tactical:
                     f_score = fidelity.get("overall_fidelity", 0) * 100
                     t_score = tactical.get("tactical_score", 0) * 100
                     h_alert = "⚠️ **HALLUCINATION DETECTED!**" if fidelity.get("hallucination_detected") else "✅ Perception Clean"
-                    
                     ai_audit_msg = textwrap.dedent(f"""
                         **AI Awareness:** {f_score:.0f}% | **Tactical Precision:** {t_score:.0f}%
                         {h_alert}
-                        
-                        *Audit compares AI's thinking vs hidden environment state.*
                     """).strip()
 
-            # Auth error: update ai_auth_error directly via gr.update() only when needed.
-            # This is NOT in a timer tick return — it's computed here and applied below
-            # only through button/step handlers (not timers), so no reactive loop occurs.
-            if reasoning and "AUTH ERROR (401)" in reasoning:
-                reasoning = "*LLM Access Restricted*"
-                auth_err = "### ❌ AUTHENTICATION ERROR (401)\n\n**Please check your HuggingFace Token.**"
-            else:
-                auth_err = None  # No update needed
+            yield [out_hud] + out_plots + [out_seeds, out_storage, out_market, out_msg, out_history, out_json, metadata]
 
-            # Return tuples — ONLY plain Python types (str, dict, list).
-            # Never include gr.update() here — causes effect_update_depth_exceeded on HF.
-            dashboard_vals = [out_hud] + out_plots + [out_seeds, out_storage, out_market, out_msg, out_history, out_json, metadata]
-            heuristic_vals = [out_hud] + out_plots + [reasoning, status, out_market, out_history, obs.text_summary]
-            hybrid_vals    = [out_hud] + out_plots + [reasoning, status, out_market, out_history, ai_audit_msg, obs.text_summary]
-
-            return {
-                "dashboard": tuple(dashboard_vals),
-            }
-
-        def handle_reset(tid):
+        async def handle_reset(tid):
             env = env_factory()
             os.environ["FARMING_TASK_ID"] = str(int(tid))
             env.reset(task_id=int(tid))
-            # Fix 2: Return only Dashboard outputs — not all 30+ outputs.
-            # Returning all_outputs forces all tabs to re-render and blocks the queue.
-            return get_status(reasoning="Environment Reset.")["dashboard"]
+            async for update in get_status(reasoning="Environment Reset.", status="🟢 READY"):
+                yield update
 
-        # Reset logic restricted to Dashboard
-
-        def handle_action(action_type, p_id, qty, s_type):
+        async def handle_action(action_type, p_id, qty, s_type):
             env = env_factory()
             action = {"action_type": action_type}
             if action_type in ["plant", "irrigate", "harvest", "clear", "apply_fertilizer", "spray_pesticide", "pull_weeds", "end_day"]:
@@ -1345,31 +1340,62 @@ def create_gradio_ui(env_factory):
                 action["seed_type"] = s_type
             
             env.step(action)
-            return get_status()
+            async for update in get_status(status=f"DONE: {action_type.upper()}"):
+                yield update
 
-        # Agent logic removed from UI
+        async def get_initial_status():
+            async for update in get_status(reasoning="System initialized.", status="🟢 READY"):
+                yield update
 
         # ── Event Handlers ────────────────────────────────────────────────────────
 
         # On startup: only hydrate Dashboard.
-        ui.load(lambda: get_status()["dashboard"], outputs=base_outputs)
+        ui.load(get_initial_status, outputs=base_outputs)
 
         # Dashboard action buttons — update only Dashboard outputs
         reset_btn.click(handle_reset, inputs=[task_id_input], outputs=base_outputs)
-        wait_btn.click(lambda p, q, s: handle_action("wait", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        buy_btn.click(lambda p, q, s: handle_action("buy_seeds", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        pump_btn.click(lambda p, q, s: handle_action("pump_water", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        end_day_btn.click(lambda p, q, s: handle_action("end_day", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        plant_btn.click(lambda p, q, s: handle_action("plant", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        irrigate_btn.click(lambda p, q, s: handle_action("irrigate", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        harvest_btn.click(lambda p, q, s: handle_action("harvest", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        clear_btn.click(lambda p, q, s: handle_action("clear", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        fertilize_btn.click(lambda p, q, s: handle_action("apply_fertilizer", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        spray_btn.click(lambda p, q, s: handle_action("spray_pesticide", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        pull_weeds_btn.click(lambda p, q, s: handle_action("pull_weeds", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        
+        # We need a small wrapper for buttons to inject the fixed command name
+        async def do_wait(p, q, s):
+            async for update in handle_action("wait", p, q, s): yield update
+        async def do_buy(p, q, s):
+            async for update in handle_action("buy_seeds", p, q, s): yield update
+        async def do_pump(p, q, s):
+            async for update in handle_action("pump_water", p, q, s): yield update
+        async def do_end_day(p, q, s):
+            async for update in handle_action("end_day", p, q, s): yield update
+        async def do_plant(p, q, s):
+            async for update in handle_action("plant", p, q, s): yield update
+        async def do_irrigate(p, q, s):
+            async for update in handle_action("irrigate", p, q, s): yield update
+        async def do_harvest(p, q, s):
+            async for update in handle_action("harvest", p, q, s): yield update
+        async def do_clear(p, q, s):
+            async for update in handle_action("clear", p, q, s): yield update
+        async def do_fertilize(p, q, s):
+            async for update in handle_action("apply_fertilizer", p, q, s): yield update
+        async def do_spray(p, q, s):
+            async for update in handle_action("spray_pesticide", p, q, s): yield update
+        async def do_pull_weeds(p, q, s):
+            async for update in handle_action("pull_weeds", p, q, s): yield update
+        async def do_sell(p, q, s):
+            async for update in handle_action("sell", p, q, s): yield update
+
+        wait_btn.click(do_wait, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        buy_btn.click(do_buy, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        pump_btn.click(do_pump, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        end_day_btn.click(do_end_day, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        plant_btn.click(do_plant, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        irrigate_btn.click(do_irrigate, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        harvest_btn.click(do_harvest, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        clear_btn.click(do_clear, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        fertilize_btn.click(do_fertilize, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        spray_btn.click(do_spray, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        pull_weeds_btn.click(do_pull_weeds, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        sell_btn.click(do_sell, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
         # ── Stress Test Logic ───────────────────────────────────────────
         
-        def run_stress_test(token, model, seed, agent_type, diff):
+        async def run_stress_test(token, model, seed, agent_type, diff):
             # Instantiate Agent
             agent = HybridAgent() if agent_type == "Hybrid" else HeuristicAgent()
             engine = ScenarioEngine(agent)
@@ -1378,35 +1404,33 @@ def create_gradio_ui(env_factory):
             d_val = int(diff) if diff > 0 else None
             
             # Execute
-            report = engine.run_tests(difficulty=d_val, seed=int(seed), hf_token=token, model_name=model)
+            report_gen = engine.run_tests_stream(difficulty=d_val, seed=int(seed), hf_token=token, model_name=model)
             
-            summary = report["summary"]
-            results = report["results"]
-            
-            # Format Dataframe
             df_data = []
-            for r in results:
-                df_data.append([
-                    r["id"], r["name"], r["difficulty"], 
-                    ", ".join(r["expected"]), r["actual"], 
-                    r["status"], r["duration"]
-                ])
-            
-            # Format Gauge Color
-            score = summary["score"]
-            color = "#f44336" if score < 50 else ("#ffeb3b" if score < 80 else "#4caf50")
-            
-            gauge_html = f"""
-            <div style='text-align:center; padding: 20px; background: #1a1a1a; border-radius: 15px; border: 1px solid #333;'>
-                <h3 style='color: #888;'>Intelligence Pass Rate</h3>
-                <h1 style='font-size:5em; margin: 10px 0; color: {color};'>{score:.0f}%</h1>
-                <p style='color: #666;'>{summary['passed']} Passed | {summary['failed']} Failed</p>
-            </div>
-            """
-            
-            progress = f"### Status: `COMPLETE` ({len(results)} scenarios evaluated)"
-            
-            return gauge_html, progress, df_data
+            async for result in report_gen:
+                if "summary" in result:
+                    summary = result["summary"]
+                    score = summary["score"]
+                    color = "#f44336" if score < 50 else ("#ffeb3b" if score < 80 else "#4caf50")
+                    gauge_html = f"""
+                    <div style='text-align:center; padding: 20px; background: #0f172a; border-radius: 12px; border: 1px solid #1e293b;'>
+                        <h3 style='color: #94a3b8;'>Intelligence Pass Rate</h3>
+                        <h1 style='font-size:5em; margin: 10px 0; color: {color};'>{score:.0f}%</h1>
+                        <p style='color: #64748b;'>{summary['passed']} Passed | {summary['failed']} Failed</p>
+                    </div>
+                    """
+                    progress = f"### Status: `COMPLETE` ({summary['total']} scenarios evaluated)"
+                    yield gauge_html, progress, df_data
+                else:
+                    # Individual scenario result
+                    r = result
+                    df_data.append([
+                        r["id"], r["name"], r["difficulty"], 
+                        ", ".join(r["expected"]), r["actual"], 
+                        r["status"], r["duration"]
+                    ])
+                    yield gr.update(), f"### Status: `EVALUATING` (Scenario {r['id']}...)", df_data
+                    await asyncio.sleep(0.01)
 
         st_run_btn.click(
             run_stress_test, 
@@ -1414,7 +1438,7 @@ def create_gradio_ui(env_factory):
             outputs=[st_gauge, st_progress_md, st_results]
         )
 
-        sell_btn.click(lambda p, q, s: handle_action("sell", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        # Agent logic removed from UI
 
         # Agent logic removed from UI
 
