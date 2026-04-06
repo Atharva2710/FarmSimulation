@@ -987,10 +987,10 @@ def format_hud(obs, metadata):
     temp = getattr(climate, "temperature", 0)
     drought_active = metadata.get("drought_active", False)
     
-    msg = f"## 📅 DAY {day}/{max_days} &nbsp;&nbsp;|&nbsp;&nbsp; 💰 FUNDS: ${money:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; 💧 TANK: {water_pct:.0f}% &nbsp;&nbsp;|&nbsp;&nbsp; 🌊 AQUIFER: {obs.aquifer:.0f}L\n\n"
-    msg += f"<div style='margin-top: 12px; margin-bottom: 6px;'>**🌡️ CLIMATE**: <span style='color:#fbbf24'>{climate_type} ({int(temp)}°C)</span></div>"
+    msg = f"## DAY {day}/{max_days} | Labor: **{obs.labor_remaining:.0f} hours remaining** | FUNDS: ${money:.2f} | TANK: {water_pct:.0f}% | AQUIFER: {obs.aquifer:.0f}L\n\n"
+    msg += f"<div style='margin-top: 12px; margin-bottom: 6px;'>**CLIMATE**: <span style='color:#fbbf24'>{climate_type} ({int(temp)}°C)</span></div>"
     if drought_active:
-        msg += " 🔥 <strong style='color:#ef4444'>DROUGHT ACTIVE!</strong>"
+        msg += " <strong style='color:#ef4444'>DROUGHT ACTIVE!</strong>"
     return msg
 
 def format_plot(obs, idx):
@@ -1149,7 +1149,7 @@ def create_gradio_ui(env_factory):
 
                     # Control Panel
                     with gr.Column(scale=1, elem_classes=["section-box"]):
-                        gr.Markdown("### 🕹️ COMMAND CENTER")
+                        gr.Markdown("### COMMAND CENTER")
                         
                         with gr.Row():
                             task_id_input = gr.Dropdown(
@@ -1157,19 +1157,19 @@ def create_gradio_ui(env_factory):
                                 value=1,
                                 label="Difficulty"
                             )
-                            reset_btn = gr.Button("♻️ RESET", variant="secondary")
+                            reset_btn = gr.Button("RESET", variant="secondary")
                         
                         gr.HTML("<hr style='margin: 24px 0; border-color: rgba(255,255,255,0.08)'>")
-                        gr.Markdown("#### ⚡ QUICK ACTIONS")
+                        gr.Markdown("#### QUICK ACTIONS")
                         with gr.Row():
-                            buy_btn = gr.Button("🛒 BUY SEEDS", elem_classes=["action-btn"])
-                            wait_btn = gr.Button("⏰ WAIT", elem_classes=["action-btn"])
+                            buy_btn = gr.Button("BUY SEEDS", elem_classes=["action-btn"])
+                            wait_btn = gr.Button("WAIT", elem_classes=["action-btn"])
                         with gr.Row():
-                            pump_btn = gr.Button("⚙️ PUMP", elem_classes=["action-btn"])
-                            end_day_btn = gr.Button("🧺 END DAY", variant="secondary")
+                            pump_btn = gr.Button("PUMP", elem_classes=["action-btn"])
+                            end_day_btn = gr.Button("END DAY", variant="secondary")
                         
                         gr.HTML("<hr style='margin: 24px 0; border-color: rgba(255,255,255,0.08)'>")
-                        gr.Markdown("#### 🌱 PLOT OPERATIONS")
+                        gr.Markdown("#### PLOT OPERATIONS")
                         plot_selector = gr.Radio(
                             choices=[0, 1, 2, 3],
                             value=0,
@@ -1177,18 +1177,18 @@ def create_gradio_ui(env_factory):
                         )
                         
                         with gr.Row():
-                            plant_btn = gr.Button("🌱 PLANT", variant="primary")
-                            irrigate_btn = gr.Button("💧 WATER", variant="primary")
-                            harvest_btn = gr.Button("🌾 HARVEST", variant="primary")
+                            plant_btn = gr.Button("PLANT", variant="primary")
+                            irrigate_btn = gr.Button("WATER", variant="primary")
+                            harvest_btn = gr.Button("HARVEST", variant="primary")
                         with gr.Row():
-                            fertilize_btn = gr.Button("🧪 FERTILIZE", variant="primary")
-                            spray_btn = gr.Button("🦟 SPRAY", variant="primary")
-                            pull_weeds_btn = gr.Button("🤲 WEED", variant="primary")
+                            fertilize_btn = gr.Button("FERTILIZE", variant="primary")
+                            spray_btn = gr.Button("SPRAY", variant="primary")
+                            pull_weeds_btn = gr.Button("WEED", variant="primary")
                         
-                        clear_btn = gr.Button("🧹 CLEAR DEAD", variant="secondary")
+                        clear_btn = gr.Button("CLEAR DEAD", variant="secondary")
 
                         gr.Markdown("---")
-                        gr.Markdown("#### 📦 RESOURCES")
+                        gr.Markdown("#### RESOURCES")
                         seed_type = gr.Dropdown(
                             choices=["wheat", "rice", "corn"],
                             value="wheat",

@@ -29,16 +29,16 @@ except ImportError:
 # ── Action Labor Costs (Phase 4) ─────────────────────────────────────────────
 
 ACTION_LABOR_COSTS = {
-    "buy_seeds": 1.0,
+    "buy_seeds": 0.5,
     "plant": 2.0,
-    "irrigate": 1.0,
-    "harvest": 3.0,
-    "clear": 1.0,
-    "sell": 1.0,
-    "pump_water": 2.0,
-    "apply_fertilizer": 2.0,
-    "spray_pesticide": 2.0,
-    "pull_weeds": 1.0,
+    "irrigate": 0.5,
+    "harvest": 4.0,
+    "clear": 0.5,
+    "sell": 0.5,
+    "pump_water": 1.0,
+    "apply_fertilizer": 1.0,
+    "spray_pesticide": 1.0,
+    "pull_weeds": 1.5,
     "wait": 1.0,
     "end_day": 0.0,
 }
@@ -263,7 +263,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         # 2. Handle Labor Overflow (Auto-Shift)
         shift_msg = ""
         if act != "end_day" and self._labor_hours < cost:
-            shift_msg = f"🌙 (Day {self._day + 1}) "
+            shift_msg = f"[Day {self._day + 1}] "
             self._advance_day()
             # Note: _advance_day resets labor_hours to 10.0
         
@@ -1202,7 +1202,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         runway = (self._water_tank / total_etc) if total_etc > 0 else 99
         
         lines = [
-            f"### 🧪 Day {self._day} / {self._max_days}  {farmer} | ⌛ **{self._labor_hours:.1g} hours remaining**",
+            f"### Day {self._day} / {self._max_days} | Labor: **{self._labor_hours:.0f} hours remaining**",
             f"💰 **Net Worth:** `${net_worth:.2f}` (Cash: `${self._money:.2f}` + Assets: `${total_storage_value + inventory_value:.2f}`)",
             f"{water_icon} **Water Tank:** `{water_pct:.1%}` ({self._water_tank:.1f}L / {WATER_TANK_CAPACITY:.0f}L) | **Runway:** `{runway:.1f} days`",
             f"🌊 **Aquifer:** `{self._aquifer:.1f}L` | **Ref ET (ETo):** `{eto:.3f}`",
