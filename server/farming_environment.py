@@ -260,19 +260,39 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             self._update_history(act, reward, thought, state_summary, done)
             return self._build_observation(reward=round(reward, 4), done=done)
 
-        # 2. Check Labor Budget for standard actions
-        if self._labor_hours < cost:
-            self._action_message = f"🛑 OUT OF LABOR! ({self._labor_hours:.1f}h left, need {cost:.1f}h). Please 'End Day'."
-            return self._build_observation(reward=0.0, done=False)
-
+        # 2. Handle Labor Overflow (Auto-Shift)
+        shift_msg = ""
+        if act != "end_day" and self._labor_hours < cost:
+            shift_msg = f"🌙 (Day {self._day + 1}) "
+            self._advance_day()
+            # Note: _advance_day resets labor_hours to 10.0
+        
         # 3. Dispatch standard actions
         self._step_count += 1
         self._total_actions += 1
         self._last_action = act
         self._ticker_offset = (self._ticker_offset + 1) % 3
         self._prev_money = self._money
-        reward = 0.0
+        
+        reward = self._execute_action(act, action)
+        self._action_message = shift_msg + self._action_message
 
+        # Check for auto-termination (no money)
+        done = self._money <= 0.0
+        if done:
+            reward += self._handle_episode_termination()
+
+        # Deduct labor and update state
+        self._labor_hours -= cost
+        self._total_reward += reward
+        self._last_money_change = self._money - self._prev_money
+        
+        self._update_history(act, reward, thought, state_summary, done)
+        return self._build_observation(reward=round(reward, 4), done=done)
+
+    def _execute_action(self, act: str, action: FarmAction) -> float:
+        """Helper to router standard actions to their handlers."""
+        reward = 0.0
         if act == "buy_seeds":
             reward_change = self._handle_buy_seeds(action)
             reward += reward_change
@@ -326,16 +346,13 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             plot = getattr(action, 'plot_id', 0) or 0
             self._action_message = f"🤲 Pulled weeds on Plot {plot}!" if reward_change >= -0.5 else f"🤲 Failed to weed Plot {plot}!"
         elif act == "wait":
+            cost = ACTION_LABOR_COSTS.get("wait", 1.0)
             reward += self._handle_wait()
             self._action_message = f"🧘‍♂️ Resting... ({cost}h)"
         else:
             reward += -1.0
             self._action_message = f"❓ Unknown action"
-
-        # Deduct labor and update state
-        self._labor_hours -= cost
-        self._total_reward += reward
-        self._last_money_change = self._money - self._prev_money
+        return reward
         
         # Check for auto-termination (no money)
         done = self._money <= 0.0
@@ -1081,6 +1098,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             self._market_impact[seed] = min(1.0, self._market_impact[seed] + 0.005)
 
         self._update_market_prices()
+        self._labor_hours = 10.0
 
     # ── observation builder ──────────────────────────────────────────────
 
@@ -1184,7 +1202,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         runway = (self._water_tank / total_etc) if total_etc > 0 else 99
         
         lines = [
-            f"### 🧪 Day {self._day} / {self._max_days}  {farmer} | ⌛ Labor: `{self._labor_hours:.1f} / 10.0h`",
+            f"### 🧪 Day {self._day} / {self._max_days}  {farmer} | ⌛ **{self._labor_hours:.1g} hours remaining**",
             f"💰 **Net Worth:** `${net_worth:.2f}` (Cash: `${self._money:.2f}` + Assets: `${total_storage_value + inventory_value:.2f}`)",
             f"{water_icon} **Water Tank:** `{water_pct:.1%}` ({self._water_tank:.1f}L / {WATER_TANK_CAPACITY:.0f}L) | **Runway:** `{runway:.1f} days`",
             f"🌊 **Aquifer:** `{self._aquifer:.1f}L` | **Ref ET (ETo):** `{eto:.3f}`",
@@ -1303,8 +1321,9 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             reward=reward,
             done=done,
         )
-        obs.metadata["grade"] = self._last_grade
+        obs.metadata["grade"]          = self._last_grade
         obs.metadata["withered_count"] = self._withered_count
+        obs.metadata["action_message"] = self._action_message
         return obs
 
     # ── state property ───────────────────────────────────────────────────
