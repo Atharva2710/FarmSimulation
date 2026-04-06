@@ -1119,7 +1119,7 @@ def create_gradio_ui(env_factory):
 
         gr.HTML(SHARED_BANNER_HTML)
 
-        with gr.Tabs():
+        with gr.Tabs(selected=0):
             with gr.Tab("🚜 Dashboard"):
                 gr.HTML("<div style='height: 24px'></div>")
                 with gr.Row():
@@ -1330,14 +1330,21 @@ def create_gradio_ui(env_factory):
 
         # Output states matching in update function
         # We need to update Dashboard, Heuristic Tab, and Hybrid Tab
-        # episode_stats receives a JSON string (not raw dict) to avoid HF serialization reactive loops
+        # base_outputs: 12 items matching dashboard_vals exactly
+        # [hud, plot0-3, seeds, storage, market, action_feed, history_display, status_box, episode_stats]
         base_outputs = [hud_md] + plot_mds + [seeds_md, storage_md, market_md, action_feed, history_display, status_box, episode_stats]
+
+        # h_outputs: 10 items matching heuristic_vals exactly
+        # [hud, plot0-3, reasoning, status, market, history, obs_viewer]
         h_outputs = [h_hud, h_plot_0, h_plot_1, h_plot_2, h_plot_3, h_reasoning, h_status, h_market, h_history, h_obs_viewer]
-        # auth_state carries (text, visible) as a plain tuple via gr.State.
-        # The actual ai_auth_error Markdown is driven by auth_state.change() below —
-        # this avoids putting gr.update() inside timer tick returns (causes reactive loops on HF).
-        auth_state = gr.State((" ", False))
-        ai_outputs = [ai_hud, ai_plot_0, ai_plot_1, ai_plot_2, ai_plot_3, ai_reasoning, ai_status, ai_market, ai_history, ai_audit_hud, auth_state, ai_obs_viewer]
+
+        # ai_outputs: 13 items matching hybrid_vals exactly
+        # hybrid_vals = [hud, plot0-3, reasoning, status, market, history, audit, auth_text, auth_visible, obs_viewer]
+        # auth_error_text → ai_auth_error (value), auth_error_visible → ai_auth_error_visible_state (gr.State)
+        # Then auth_error_visible_state.change() drives ai_auth_error visibility — no gr.update() in tick returns.
+        ai_auth_error_visible_state = gr.State(False)
+        ai_outputs = [ai_hud, ai_plot_0, ai_plot_1, ai_plot_2, ai_plot_3, ai_reasoning, ai_status, ai_market, ai_history, ai_audit_hud, ai_auth_error, ai_auth_error_visible_state, ai_obs_viewer]
+
         all_outputs = base_outputs + h_outputs + ai_outputs
 
         # Agent Instances
@@ -1395,10 +1402,12 @@ def create_gradio_ui(env_factory):
             # Group the return values logically.
             # IMPORTANT: All values must be plain Python types (str, dict, bool, list).
             # Never put gr.update() objects here — they cause effect_update_depth_exceeded on HF.
-            dashboard_vals = [out_hud] + out_plots + [out_seeds, out_storage, out_market, out_msg, out_history, out_json, json.dumps(metadata, default=str)]
+            # dashboard: out_history→gr.JSON (dict), out_json→gr.Code (str), metadata→gr.JSON (dict, NOT string)
+            dashboard_vals = [out_hud] + out_plots + [out_seeds, out_storage, out_market, out_msg, out_history, out_json, metadata]
             heuristic_vals = [out_hud] + out_plots + [reasoning, status, out_market, out_history, obs.text_summary]
-            auth_state_val = (auth_error_text, auth_error_visible)
-            hybrid_vals    = [out_hud] + out_plots + [reasoning, status, out_market, out_history, ai_audit_msg, auth_state_val, obs.text_summary]
+            # hybrid: auth_error_text→gr.Markdown value (str), auth_error_visible→gr.Markdown visible (bool)
+            # These are TWO separate values feeding TWO separate outputs (ai_auth_error_val, ai_auth_error_vis)
+            hybrid_vals    = [out_hud] + out_plots + [reasoning, status, out_market, out_history, ai_audit_msg, auth_error_text, auth_error_visible, obs.text_summary]
 
             return {
                 "dashboard": tuple(dashboard_vals),
@@ -1475,12 +1484,14 @@ def create_gradio_ui(env_factory):
 
         # ── Event Handlers ────────────────────────────────────────────────────────
 
-        # Wire auth_state → ai_auth_error Markdown.
-        # Using a state.change() chain keeps gr.update() OUT of timer tick returns,
-        # which is the primary cause of effect_update_depth_exceeded on HuggingFace.
-        auth_state.change(
-            lambda s: gr.update(value=s[0], visible=s[1]),
-            inputs=[auth_state],
+        # Wire ai_auth_error_visible_state → ai_auth_error visibility.
+        # hybrid_vals sends auth_error_text directly to ai_auth_error (value update),
+        # and auth_error_visible to ai_auth_error_visible_state (gr.State).
+        # This state.change() then drives the visible property separately —
+        # keeping gr.update(visible=...) OUT of timer tick return tuples entirely.
+        ai_auth_error_visible_state.change(
+            lambda v: gr.update(visible=v),
+            inputs=[ai_auth_error_visible_state],
             outputs=[ai_auth_error]
         )
 
