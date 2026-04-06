@@ -1474,15 +1474,15 @@ def create_gradio_ui(env_factory):
         ai_reset.click(lambda t: handle_reset(t), inputs=[task_id_input], outputs=all_outputs)
 
         # Timer Logic for Auto-Play (Gradio 4)
-        h_timer = gr.Timer(1.0, active=True)
-        h_timer.tick(lambda auto, s: handle_agent_step("heuristic", h_strategy=s)["heuristic"] if auto else gr.skip(), inputs=[h_auto_toggle, h_strategy_input], outputs=h_outputs)
+        h_timer = gr.Timer(1.0, active=False)
+        h_timer.tick(lambda s: handle_agent_step("heuristic", h_strategy=s)["heuristic"], inputs=[h_strategy_input], outputs=h_outputs)
         
-        ai_timer = gr.Timer(2.0, active=True) # AI is slower
-        ai_timer.tick(lambda auto, tok, s: handle_agent_step("ai", tok, h_strategy=s)["hybrid"] if auto else gr.skip(), inputs=[ai_auto_toggle, hf_token_input, h_strategy_input], outputs=ai_outputs)
+        ai_timer = gr.Timer(2.0, active=False) # AI is slower
+        ai_timer.tick(lambda tok, s: handle_agent_step("ai", tok, h_strategy=s)["hybrid"], inputs=[hf_token_input, h_strategy_input], outputs=ai_outputs)
         
         # Toggle Timers (Gradio 4 timers are active by default, so we control via logic)
-        h_auto_toggle.change(lambda x: x, inputs=[h_auto_toggle], outputs=[h_auto_toggle])
-        ai_auto_toggle.change(lambda x: x, inputs=[ai_auto_toggle], outputs=[ai_auto_toggle])
+        h_auto_toggle.change(lambda x: gr.Timer(active=x), inputs=[h_auto_toggle], outputs=[h_timer])
+        ai_auto_toggle.change(lambda x: gr.Timer(active=x), inputs=[ai_auto_toggle], outputs=[ai_timer])
 
         show_debug_btn.click(lambda: gr.update(visible=not status_box.visible), outputs=[status_box])
         show_history_btn.click(lambda: gr.update(visible=not history_display.visible), outputs=[history_display])
