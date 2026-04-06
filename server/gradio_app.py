@@ -1226,25 +1226,6 @@ def create_gradio_ui(env_factory):
             # reactive loops and connection timeouts on HuggingFace Spaces.
             # Automated agents can still access the environment via the REST API.
 
-            with gr.Tab("🤖 AUTO-HEURISTIC") as heuristic_tab:
-                gr.Markdown("### 🧠 HEURISTIC INTELLIGENCE ENGINE")
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        h_mode = gr.Dropdown(["physics", "legacy"], label="Heuristic Mode", value="physics")
-                        h_status = gr.Markdown("### Status: `IDLE`", elem_classes=["section-box"])
-                        h_step_btn = gr.Button("🎲 STEP AGENT", variant="primary")
-                        h_auto_toggle = gr.Checkbox(label="🚀 AUTO-PLAY (Loop)", value=False)
-                        h_interval = gr.Slider(0.1, 5.0, value=1.0, step=0.1, label="Step Interval (s)")
-                    
-                    with gr.Column(scale=2):
-                        h_hud_md = gr.Markdown("Loading AI Context...", elem_classes=["section-box"])
-                        h_reasoning = gr.Textbox(label="AI Internal Reasoning", lines=5, interactive=False, elem_classes=["audit-box"])
-                        h_summary = gr.Markdown("### Strategic Summary", elem_classes=["section-box"])
-                
-                gr.Markdown("---")
-                # Secondary HUD for the Heuristic Tab
-                with gr.Row():
-                    h_plots = [gr.HTML() for _ in range(4)]
 
             with gr.Tab("📖 Documentation") as doc_tab:
                 doc_html_content = gr.HTML(DOCS_HTML)
@@ -1252,14 +1233,7 @@ def create_gradio_ui(env_factory):
         # dashboard_vals (12): hud, plot×4, seeds, storage, market, action_feed, history, json, stats
         base_outputs = [hud_md] + plot_mds + [seeds_md, storage_md, market_md, action_feed, history_display, status_box, episode_stats]
 
-        # Outputs for Heuristic Tab
-        h_outputs = [h_hud_md] + h_plots + [h_reasoning, h_status, h_summary]
-        
-        all_outputs = base_outputs + h_outputs
 
-        # Agent Instances
-        h_agent = HeuristicAgent()
-        ai_agent = HybridAgent()
 
         async def get_status(reasoning=None, status=None):
             if reasoning is not None: state.reasoning = reasoning
@@ -1379,57 +1353,6 @@ def create_gradio_ui(env_factory):
         spray_btn.click(do_spray, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
         pull_weeds_btn.click(do_pull_weeds, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
         sell_btn.click(do_sell, inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        # ── Heuristic Loop Logic ──────────────────────────────────────────
-        
-        async def run_h_step(mode):
-            env = env_factory()
-            obs = env.get_observation()
-            action, thought = h_agent.act(obs, mode=mode)
-            env.step(action)
-            
-            async for update in get_status(reasoning=thought, status=f"AI: {action.get('action_type', '').upper()}"):
-                hud = update[0]
-                plots = update[1:5]
-                summary = env_factory().get_observation().text_summary
-                yield update + [hud] + list(plots) + [thought, f"### Status: `AI ACTIVE`", summary]
-
-        async def handle_auto_toggle(is_active, mode, interval):
-            if is_active:
-                state.auto_play = True
-                # Initial state: [h_status, h_auto_toggle] + base_outputs + h_outputs (Total 22)
-                yield [gr.update(value="### Status: `AUTO-PLAYING`"), gr.update()] + [gr.update()]*20
-                
-                while state.auto_play:
-                    env = env_factory()
-                    obs = env.get_observation()
-                    action, thought = h_agent.act(obs, mode=mode)
-                    env.step(action)
-                    
-                    async for update in get_status(reasoning=thought, status=f"AI: {action.get('action_type', '').upper()}"):
-                        if not state.auto_play: break
-                        hud = update[0]
-                        plots = update[1:5]
-                        summary = env.text_summary
-                        # yield correct number of outputs (22 total)
-                        # status(1) + toggle(1) + base(12) + h_hud(1) + h_plots(4) + h_reason(1) + h_status(1) + h_sum(1)
-                        yield [gr.update(value="### Status: `AUTO-PLAYING`"), gr.update()] + update + [hud] + list(plots) + [thought, f"### Status: AI ACTIVE", summary]
-                    
-                    if not state.auto_play: break
-                    await asyncio.sleep(interval or 1.0)
-                
-                yield [gr.update(value="### Status: `HALTED`"), gr.update()] + [gr.update()]*20
-            else:
-                state.auto_play = False
-                yield [gr.update(value="### Status: `HALTED`"), gr.update()] + [gr.update()]*20
-
-        h_step_btn.click(run_h_step, inputs=[h_mode], outputs=base_outputs + h_outputs)
-        
-        h_auto_toggle.change(
-            fn=handle_auto_toggle,
-            inputs=[h_auto_toggle, h_mode, h_interval],
-            outputs=[h_status, h_auto_toggle] + base_outputs + h_outputs,
-            queue=True
-        )
 
         # Agent logic removed from UI
 
