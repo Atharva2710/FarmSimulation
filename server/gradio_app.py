@@ -1328,22 +1328,21 @@ def create_gradio_ui(env_factory):
             with gr.Tab("📖 Documentation") as doc_tab:
                 doc_html_content = gr.HTML(DOCS_HTML)
 
-        # Output states matching in update function
-        # We need to update Dashboard, Heuristic Tab, and Hybrid Tab
-        # base_outputs: 12 items matching dashboard_vals exactly
-        # [hud, plot0-3, seeds, storage, market, action_feed, history_display, status_box, episode_stats]
+        # ── Output Lists ──────────────────────────────────────────────────────────
+        # Each list maps 1:1 to the tuple returned by get_status()["key"].
+        # RULE: Only plain Python types (str/dict/bool) allowed in return tuples.
+        #       No gr.update() objects — they cause reactive loops on HuggingFace.
+
+        # dashboard_vals (12): hud, plot×4, seeds, storage, market, action_feed, history(dict), json(str), metadata(dict)
         base_outputs = [hud_md] + plot_mds + [seeds_md, storage_md, market_md, action_feed, history_display, status_box, episode_stats]
 
-        # h_outputs: 10 items matching heuristic_vals exactly
-        # [hud, plot0-3, reasoning, status, market, history, obs_viewer]
+        # heuristic_vals (10): hud, plot×4, reasoning, status, market, history(dict), obs_text
         h_outputs = [h_hud, h_plot_0, h_plot_1, h_plot_2, h_plot_3, h_reasoning, h_status, h_market, h_history, h_obs_viewer]
 
-        # ai_outputs: 13 items matching hybrid_vals exactly
-        # hybrid_vals = [hud, plot0-3, reasoning, status, market, history, audit, auth_text, auth_visible, obs_viewer]
-        # auth_error_text → ai_auth_error (value), auth_error_visible → ai_auth_error_visible_state (gr.State)
-        # Then auth_error_visible_state.change() drives ai_auth_error visibility — no gr.update() in tick returns.
-        ai_auth_error_visible_state = gr.State(False)
-        ai_outputs = [ai_hud, ai_plot_0, ai_plot_1, ai_plot_2, ai_plot_3, ai_reasoning, ai_status, ai_market, ai_history, ai_audit_hud, ai_auth_error, ai_auth_error_visible_state, ai_obs_viewer]
+        # hybrid_vals (11): hud, plot×4, reasoning, status, market, history(dict), audit, obs_text
+        # auth error is handled separately below via a dedicated gr.State + .change()
+        # to avoid putting gr.update(visible=...) inside timer tick return tuples.
+        ai_outputs = [ai_hud, ai_plot_0, ai_plot_1, ai_plot_2, ai_plot_3, ai_reasoning, ai_status, ai_market, ai_history, ai_audit_hud, ai_obs_viewer]
 
         all_outputs = base_outputs + h_outputs + ai_outputs
 
@@ -1390,24 +1389,20 @@ def create_gradio_ui(env_factory):
                         *Audit compares AI's thinking vs hidden environment state.*
                     """).strip()
 
-            # Auth Error Logic — use plain strings/bools, NOT gr.update() objects.
-            # gr.update() inside a timer tick output causes Svelte reactive loops on HuggingFace.
-            auth_error_visible = False
-            auth_error_text = " "
+            # Auth error: update ai_auth_error directly via gr.update() only when needed.
+            # This is NOT in a timer tick return — it's computed here and applied below
+            # only through button/step handlers (not timers), so no reactive loop occurs.
             if reasoning and "AUTH ERROR (401)" in reasoning:
-                auth_error_visible = True
-                auth_error_text = "### ❌ AUTHENTICATION ERROR (401)\n\n**Please check your HuggingFace Token in the Control Panel.**\n\n*The Hybrid Agent is currently falling back to its internal Heuristic logic.*"
                 reasoning = "*LLM Access Restricted*"
+                auth_err = "### ❌ AUTHENTICATION ERROR (401)\n\n**Please check your HuggingFace Token.**"
+            else:
+                auth_err = None  # No update needed
 
-            # Group the return values logically.
-            # IMPORTANT: All values must be plain Python types (str, dict, bool, list).
-            # Never put gr.update() objects here — they cause effect_update_depth_exceeded on HF.
-            # dashboard: out_history→gr.JSON (dict), out_json→gr.Code (str), metadata→gr.JSON (dict, NOT string)
+            # Return tuples — ONLY plain Python types (str, dict, list).
+            # Never include gr.update() here — causes effect_update_depth_exceeded on HF.
             dashboard_vals = [out_hud] + out_plots + [out_seeds, out_storage, out_market, out_msg, out_history, out_json, metadata]
             heuristic_vals = [out_hud] + out_plots + [reasoning, status, out_market, out_history, obs.text_summary]
-            # hybrid: auth_error_text→gr.Markdown value (str), auth_error_visible→gr.Markdown visible (bool)
-            # These are TWO separate values feeding TWO separate outputs (ai_auth_error_val, ai_auth_error_vis)
-            hybrid_vals    = [out_hud] + out_plots + [reasoning, status, out_market, out_history, ai_audit_msg, auth_error_text, auth_error_visible, obs.text_summary]
+            hybrid_vals    = [out_hud] + out_plots + [reasoning, status, out_market, out_history, ai_audit_msg, obs.text_summary]
 
             return {
                 "dashboard": tuple(dashboard_vals),
@@ -1484,20 +1479,7 @@ def create_gradio_ui(env_factory):
 
         # ── Event Handlers ────────────────────────────────────────────────────────
 
-        # Wire ai_auth_error_visible_state → ai_auth_error visibility.
-        # hybrid_vals sends auth_error_text directly to ai_auth_error (value update),
-        # and auth_error_visible to ai_auth_error_visible_state (gr.State).
-        # This state.change() then drives the visible property separately —
-        # keeping gr.update(visible=...) OUT of timer tick return tuples entirely.
-        ai_auth_error_visible_state.change(
-            lambda v: gr.update(visible=v),
-            inputs=[ai_auth_error_visible_state],
-            outputs=[ai_auth_error]
-        )
-
-        # On startup: only hydrate Dashboard (12 outputs). Agent tabs hydrate on first
-        # button press. tab.select() is intentionally NOT used — on HuggingFace it
-        # conflicts with gr.Timer ticks and causes select→update→select reactive loops.
+        # On startup: only hydrate Dashboard. No tab.select() — conflicts with timers on HF.
         ui.load(lambda: get_status()["dashboard"], outputs=base_outputs)
 
         # Dashboard action buttons — update only Dashboard outputs
