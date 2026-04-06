@@ -4,6 +4,8 @@ import json
 import time
 import textwrap
 from agents import HeuristicAgent, HybridAgent
+from server.scenario_engine import ScenarioEngine
+from server.scenario_definitions import SCENARIOS
 
 custom_css = """
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Syne:wght@700;800&family=DM+Mono:wght@400;500&display=swap');
@@ -1214,6 +1216,39 @@ def create_gradio_ui(env_factory):
             # reactive loops and connection timeouts on HuggingFace Spaces.
             # Automated agents can still access the environment via the REST API.
 
+            with gr.Tab("🧪 AGENT STRESS TEST") as stress_tab:
+                gr.Markdown("### 🛠️ CONFIGURATION & CALIBRATION")
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        st_token = gr.Textbox(label="HuggingFace Token", type="password", placeholder="hf_...", value=os.getenv("HF_TOKEN", ""))
+                        st_model = gr.Dropdown(
+                            label="Model Endpoint",
+                            choices=[
+                                "Qwen/Qwen2.5-72B-Instruct", 
+                                "Qwen/Qwen2.5-7B-Instruct", 
+                                "meta-llama/Llama-3.3-70B-Instruct",
+                                "deepseek-ai/DeepSeek-V3"
+                            ],
+                            value="Qwen/Qwen2.5-72B-Instruct",
+                            allow_custom_value=True
+                        )
+                        st_seed = gr.Number(label="Random Seed (Consistency)", value=42, precision=0)
+                        st_agent = gr.Radio(["Heuristic", "Hybrid"], label="Target Agent", value="Heuristic")
+                        st_diff = gr.Slider(0, 3, value=0, step=1, label="Difficulty Filter (0=All)")
+                        st_run_btn = gr.Button("🔥 START STRESS TEST", variant="primary")
+                    
+                    with gr.Column(scale=2):
+                        st_gauge = gr.HTML(value="<div style='text-align:center; padding: 20px; background: #1a1a1a; border-radius: 15px; border: 1px solid #333;'><h3 style='color: #888;'>Intelligence Pass Rate</h3><h1 style='font-size:5em; margin: 10px 0; color: #4caf50;'>--%</h1><p style='color: #666;'>Select configuration and click START</p></div>")
+                        st_progress_md = gr.Markdown("### Status: `IDLE`")
+                
+                gr.Markdown("---")
+                st_results = gr.Dataframe(
+                    headers=["ID", "Scenario", "Dif", "Expected", "Actual", "Status", "Duration (s)"],
+                    datatype=["number", "str", "number", "str", "str", "str", "number"],
+                    label="Execution Trace",
+                    interactive=False
+                )
+
             with gr.Tab("📖 Documentation") as doc_tab:
                 doc_html_content = gr.HTML(DOCS_HTML)
 
@@ -1332,6 +1367,53 @@ def create_gradio_ui(env_factory):
         fertilize_btn.click(lambda p, q, s: handle_action("apply_fertilizer", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
         spray_btn.click(lambda p, q, s: handle_action("spray_pesticide", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
         pull_weeds_btn.click(lambda p, q, s: handle_action("pull_weeds", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        # ── Stress Test Logic ───────────────────────────────────────────
+        
+        def run_stress_test(token, model, seed, agent_type, diff):
+            # Instantiate Agent
+            agent = HybridAgent() if agent_type == "Hybrid" else HeuristicAgent()
+            engine = ScenarioEngine(agent)
+            
+            # Filter diff
+            d_val = int(diff) if diff > 0 else None
+            
+            # Execute
+            report = engine.run_tests(difficulty=d_val, seed=int(seed), hf_token=token, model_name=model)
+            
+            summary = report["summary"]
+            results = report["results"]
+            
+            # Format Dataframe
+            df_data = []
+            for r in results:
+                df_data.append([
+                    r["id"], r["name"], r["difficulty"], 
+                    ", ".join(r["expected"]), r["actual"], 
+                    r["status"], r["duration"]
+                ])
+            
+            # Format Gauge Color
+            score = summary["score"]
+            color = "#f44336" if score < 50 else ("#ffeb3b" if score < 80 else "#4caf50")
+            
+            gauge_html = f"""
+            <div style='text-align:center; padding: 20px; background: #1a1a1a; border-radius: 15px; border: 1px solid #333;'>
+                <h3 style='color: #888;'>Intelligence Pass Rate</h3>
+                <h1 style='font-size:5em; margin: 10px 0; color: {color};'>{score:.0f}%</h1>
+                <p style='color: #666;'>{summary['passed']} Passed | {summary['failed']} Failed</p>
+            </div>
+            """
+            
+            progress = f"### Status: `COMPLETE` ({len(results)} scenarios evaluated)"
+            
+            return gauge_html, progress, df_data
+
+        st_run_btn.click(
+            run_stress_test, 
+            inputs=[st_token, st_model, st_seed, st_agent, st_diff], 
+            outputs=[st_gauge, st_progress_md, st_results]
+        )
+
         sell_btn.click(lambda p, q, s: handle_action("sell", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
 
         # Agent logic removed from UI
