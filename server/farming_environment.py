@@ -20,8 +20,10 @@ from models import (
 )
 try:
     from tasks import EpisodeRecord, grade_episode
+    from audit_utils import calculate_state_fidelity, calculate_tactical_report
 except ImportError:
     from server.tasks import EpisodeRecord, grade_episode
+    from server.audit_utils import calculate_state_fidelity, calculate_tactical_report
 
 
 # ── Helper functions ─────────────────────────────────────────────────────────
@@ -60,6 +62,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         self._withered_count: int              = 0
         self._healthy_days:   int              = 0
         self._sell_events:    list             = []
+        self._price_history:  Dict[str, List[float]] = {"wheat": [], "rice": [], "corn": []}
         self._last_grade:     float            = 0.0
         self._withered_plots: set              = set()
         
@@ -156,6 +159,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         self._withered_count = 0
         self._healthy_days   = 0
         self._sell_events    = []
+        self._price_history  = {"wheat": [], "rice": [], "corn": []}
         self._last_grade     = 0.0
         self._withered_plots = set()
 
@@ -179,6 +183,8 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
     def step(
         self,
         action: FarmAction | dict[str, Any],
+        thought: Optional[str] = None,
+        state_summary: Optional[Dict[str, Any]] = None,
     ) -> FarmObservation:
         """
         Takes one action in the environment and advances the world by 1 day.
@@ -189,7 +195,14 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             
         # Ensure action is a FarmAction object (Gradio passes dicts)
         if isinstance(action, dict):
+            # Extract metadata before conversion
+            thought = thought or action.get("thought")
+            state_summary = state_summary or action.get("state_summary")
             action = FarmAction(**action)
+        else:
+            # Extract from Pydantic model
+            thought = thought or getattr(action, "thought", None)
+            state_summary = state_summary or getattr(action, "state_summary", None)
 
         self._step_count += 1
         self._total_actions += 1
@@ -349,6 +362,9 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             "action": {
                 "type": act,
                 "details": self._action_message,
+                "thought": thought,
+                "fidelity": calculate_state_fidelity(state_summary, self._build_observation(reward=None, done=False)) if state_summary else None,
+                "tactical": calculate_tactical_report(self._build_observation(reward=None, done=False)),
             },
             "reward": round(reward, 2),
             "state_before": {
@@ -407,6 +423,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             "day": self._day,
             "max_days": self._max_days,
             "done": self._done,
+            "withered_count": self._withered_count,
             "last_grade": getattr(self, "_last_grade", 0.0),
             "action_history": self._action_history.copy(),
         }
@@ -466,9 +483,10 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         # execute
         self._seed_inventory[seed] -= 1
         plot.crop_type      = seed
-        plot.stage          = "seedling"
-        plot.days_planted   = 0
-        plot.soil_moisture  = 0.5
+        plot.stage      = "seedling"
+        plot.days_planted = 0
+        plot.days_mature    = 0
+        plot.days_critical  = 0
         plot.health         = 1.0
         plot.yield_estimate = SEED_CONFIG[seed]["yield_kg"]
         # Reset pests/weeds on plant? Usually clearing resets them, but let's be sure
@@ -538,6 +556,8 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         plot.soil_moisture  = 0.5
         plot.health         = 1.0
         plot.yield_estimate = 0.0
+        plot.days_mature    = 0
+        plot.days_critical  = 0
 
         # reward: proportion of max possible yield achieved
         max_yield  = SEED_CONFIG[crop]["yield_kg"]
@@ -566,6 +586,8 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         plot.soil_moisture = 0.5
         plot.health = 1.0
         plot.yield_estimate = 0.0
+        plot.days_mature    = 0
+        plot.days_critical  = 0
         plot.has_weeds = False
         plot.has_pests = False
         plot.pest_severity = 0.0
@@ -797,6 +819,12 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
 
         for seed, cfg in SEED_CONFIG.items():
             old = self._market_prices[seed]
+            
+            # Record current price to history before updating (cap at 7)
+            if seed not in self._price_history: self._price_history[seed] = []
+            self._price_history[seed].append(old.sell_price)
+            if len(self._price_history[seed]) > 7:
+                self._price_history[seed].pop(0)
 
             # sine wave period = 20 days, offset per seed to desync them
             offsets = {"wheat": 0, "rice": 7, "corn": 13}
@@ -805,6 +833,10 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
 
             # sell price swings ±20% around base + noise from difficulty
             new_sell  = cfg["base_sell"] * (1.0 + 0.2 * wave + noise)
+            old.avg_7d = sum(self._price_history[seed]) / len(self._price_history[seed]) if self._price_history[seed] else new_sell
+            
+            old.trend      = (new_sell / old.sell_price) - 1.0
+            old.sell_price = round(new_sell, 2)
             new_sell  = max(cfg["base_sell"] * 0.3, new_sell)   # floor lower in hard mode (30%)
 
             # buy price moves less, ±10%
@@ -819,7 +851,8 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
                 seed_type=seed,
                 buy_price=round(new_buy, 2),
                 sell_price=round(new_sell, 2),
-                trend=round(trend, 2),
+                trend=round(trend, 3),
+                avg_7d=round(old.avg_7d, 2),
             )
 
     def _advance_day(self) -> None:
@@ -903,15 +936,20 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
                 plot.pest_severity = min(1.0, (plot.pest_severity + 0.1) * 1.5)
                 plot.health = max(0.0, plot.health - (0.05 * plot.pest_severity))
 
-            # moisture change (Rain benefit - Climate decay - Weed penalty)
-            rain_benefit = climate.precipitation * 0.03 # 5mm rain = +15% moisture
-            weed_penalty = 0.05 if plot.has_weeds else 0.0
-            moisture_loss = cfg["moisture_decay"] + weed_penalty
+            # physics-informed moisture change (Rain benefit - FAO-56 ETc - Weed penalty)
+            # simplified ETo: higher temp and lower humidity = higher transpiration
+            eto = (self._current_temp / 100.0) * (1.1 - self._current_humidity) 
             
-            # Application: Soil moisture rises with rain and falls with climate decay
-            # Saturated Evaporation: wetter soil dries faster (dynamic balance)
-            scaling_factor = 0.5 + (plot.soil_moisture * 1.5) # multiplier from 0.5x to 2.0x
-            dynamic_loss = moisture_loss * scaling_factor
+            seed_cfg = SEED_CONFIG.get(plot.crop_type, {})
+            kc = seed_cfg.get("Kc", 0.5) # Fallback to 0.5 for weeds/empty
+            etc = eto * kc
+            
+            rain_benefit = climate.precipitation * 0.03
+            weed_penalty = 0.05 if plot.has_weeds else 0.0
+            
+            # Saturated Evaporation: wetter soil dries faster
+            scaling_factor = 0.5 + (plot.soil_moisture * 1.5)
+            dynamic_loss = (etc + weed_penalty) * scaling_factor
             
             new_moisture = plot.soil_moisture + rain_benefit - dynamic_loss
             plot.soil_moisture = max(0.0, min(1.0, new_moisture))
@@ -995,6 +1033,14 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             if plot.stage in ("seedling", "growing", "mature"):
                 max_yield          = seed_cfg["yield_kg"]
                 plot.yield_estimate = max_yield * plot.health
+
+            # Track Maturity Latency
+            if plot.stage == "mature":
+                plot.days_mature += 1
+            
+            # Track Danger Exposure (Near-Death State)
+            if (plot.health < 0.2 or plot.soil_moisture < 0.2) and plot.stage not in ("empty", "withered"):
+                plot.days_critical += 1
 
         # 4. spoilage in storage (scaled by humidity)
         spoilage_rate = cfg["spoilage_rate"]
@@ -1097,12 +1143,24 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             weather_icon = "🔥"
             weather_desc = "DROUGHT"
 
+        # FAO-56 Physics & Economics
+        eto = (climate.temperature / 100.0) * (1.1 - climate.humidity)
+        
+        # Calculate Economics
+        total_storage_value = sum(qty * self._market_prices[c].sell_price for c, qty in self._storage.items())
+        inventory_value = sum(qty * SEED_CONFIG[c]['base_buy'] for c, qty in self._seed_inventory.items())
+        net_worth = self._money + total_storage_value + inventory_value
+        
+        # Calculate Water Runway (Days)
+        total_etc = sum((eto * SEED_CONFIG[p.crop_type if p.crop_type else 'wheat']['Kc']) for p in self._plots if p.stage not in ['empty', 'withered'])
+        runway = (self._water_tank / total_etc) if total_etc > 0 else 99
+        
         lines = [
             f"### 🧪 Day {self._day} / {self._max_days}  {farmer}",
-            f"💰 **Money:** `${self._money:.2f}`{money_trend}",
-            f"{water_icon} **Water Tank:** `{water_pct:.1%}` ({self._water_tank:.1f}L / {WATER_TANK_CAPACITY:.0f}L)",
-            f"🌊 **Aquifer:** `{self._aquifer:.1f}L`",
-            f"{weather_icon} **Climate:** {climate.climate_type.upper()} - {weather_desc} ({climate.temperature:.1f}°C, {climate.humidity:.0%} Hum, {climate.precipitation:.1f}mm Rain)",
+            f"💰 **Net Worth:** `${net_worth:.2f}` (Cash: `${self._money:.2f}` + Assets: `${total_storage_value + inventory_value:.2f}`)",
+            f"{water_icon} **Water Tank:** `{water_pct:.1%}` ({self._water_tank:.1f}L / {WATER_TANK_CAPACITY:.0f}L) | **Runway:** `{runway:.1f} days`",
+            f"🌊 **Aquifer:** `{self._aquifer:.1f}L` | **Ref ET (ETo):** `{eto:.3f}`",
+            f"{weather_icon} **Climate:** {climate.climate_type.upper()} ({climate.temperature:.1f}°C, {climate.humidity:.0%} Hum)",
         ]
         
         # Add action feedback message
@@ -1144,10 +1202,14 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
                 if warnings_str:
                     warnings_str = " | " + warnings_str
                 
+                crop_cfg = SEED_CONFIG[plot.crop_type]
+                kc = crop_cfg.get("Kc", 1.0)
+                p_const = crop_cfg.get("p", 0.5)
+                etc = eto * kc
+                p_limit = 1.0 - seed_cfg.get("p", 0.5)
+
                 lines.append(
-                    f"  * **Plot {plot.plot_id}:** {plot.crop_type.upper()} | "
-                    f"Stage: *{plot.stage}* | Moisture: **{plot.soil_moisture:.2f}** | "
-                    f"Health: **{plot.health:.2f}** | NPK: ({plot.nitrogen:.1f}, {plot.phosphorus:.1f}, {plot.potassium:.1f}){warnings_str} | {status}"
+                    f"  * **Plot {plot.plot_id}:** {plot.crop_type.upper()} | {status} | 💧 **Moisture:** `{plot.soil_moisture:.1%}` (RAW Limit: `{p_limit:.1%}`) | ❤️ {plot.health:.1%} | **ETc Demand:** `{etc:.3f}`"
                 )
         
         lines.append("<hr>")
@@ -1161,18 +1223,22 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         else:
             market_mood = "📊➡️ Stable"
         
-        # Scrolling Market ticker
-        market_items = []
+        # 📈 MARKET INTELLIGENCE (ROI & BASE PRICING)
+        market_rows = []
         for s, p in self._market_prices.items():
-            trend = '↑' if p.trend > 0.1 else '↓' if p.trend < -0.1 else '-'
-            market_items.append(f"**{s.upper()}**: ${p.sell_price:.2f} {trend}")
+            cfg = SEED_CONFIG[s]
+            premium = ((p.sell_price / cfg['base_sell']) - 1) * 100
+            trend_icon = '↑' if p.trend > 0.1 else '↓' if p.trend < -0.1 else '-'
+            
+            # 7d Avg display
+            history = self._price_history.get(s, [])
+            avg_7d = sum(history) / len(history) if history else p.sell_price
+            market_rows.append(f"  * **{s.upper()}**: Current ${p.sell_price:.2f} (7d Avg: ${avg_7d:.2f}) | {premium:+.0f}% Prem | Trend: {trend_icon}")
         
-        # Rotate items for scrolling effect
-        scrolled_items = market_items[self._ticker_offset:] + market_items[:self._ticker_offset]
-        prices = " | ".join(scrolled_items)
-        lines.append(f"📈 **MARKET:** {prices} | {market_mood}")
+        lines.append("\n#### 📈 MARKET INTELLIGENCE\n" + "\n".join(market_rows) + f"\n\n**Mood:** {market_mood}")
         
-        # Resources
+        # Resources & Storage
+        lines.append("<hr>")
         inv = " | ".join(f"**{s}**: {q}" for s, q in self._seed_inventory.items())
         lines.append(f"🎒 **SEEDS:** {inv}")
         

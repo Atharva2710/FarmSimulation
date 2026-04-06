@@ -2,6 +2,7 @@ import gradio as gr
 import os
 import json
 import time
+import textwrap
 from agents import HeuristicAgent, HybridAgent
 
 custom_css = """
@@ -13,6 +14,7 @@ custom_css = """
     --panel:       rgba(14, 22, 14, 0.92);
     --border:      rgba(34, 197, 94, 0.13);
     --border-hi:   rgba(34, 197, 94, 0.35);
+    --code-bg:     rgba(0, 0, 0, 0.4);
     --green:       #22c55e;
     --green-dim:   #16a34a;
     --green-glow:  rgba(34, 197, 94, 0.15);
@@ -139,6 +141,74 @@ footer,
 }
 
 .farm-plot:hover::before { left: 200%; }
+
+/* ── AI AUDIT BOX ────────────────────────────────────── */
+.audit-box {
+    border-left: 4px solid var(--green) !important;
+    background: rgba(34, 197, 94, 0.03) !important;
+}
+
+.audit-box:contains('HALLUCINATION') {
+    border-left-color: #ef4444 !important;
+}
+
+.auth-error-box {
+    background: rgba(239, 68, 68, 0.1) !important;
+    border: 2px solid #ef4444 !important;
+    border-radius: 12px !important;
+    padding: 24px !important;
+    margin-bottom: 24px !important;
+    animation: pulse-red 2s infinite !important;
+    text-align: center !important;
+    box-shadow: 0 0 40px rgba(239, 68, 68, 0.15) !important;
+}
+
+@keyframes pulse-red {
+    0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+    70% { box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+.obs-viewer {
+    background: var(--code-bg) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 8px !important;
+    margin-top: 12px !important;
+    font-size: 0.85rem !important;
+    max-height: 400px !important;
+    overflow-y: auto !important;
+}
+    background: rgba(239, 68, 68, 0.05) !important;
+    animation: pulse-red 2s infinite !important;
+}
+
+@keyframes pulse-red {
+    0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+    70% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+.auth-error-box {
+    background: rgba(239, 68, 68, 0.1) !important;
+    border: 2px solid #ef4444 !important;
+    border-radius: var(--rl) !important;
+    padding: 24px !important;
+    margin: 16px 0 !important;
+    text-align: center !important;
+    animation: pulse-red 2s infinite !important;
+}
+
+.auth-error-box h3 {
+    color: #ef4444 !important;
+    -webkit-text-fill-color: #ef4444 !important;
+    font-size: 1.5rem !important;
+    margin-bottom: 8px !important;
+}
+
+.auth-error-box p {
+    font-size: 1.1rem !important;
+    font-weight: 500 !important;
+}
 
 /* ── TYPOGRAPHY ───────────────────────────────────────── */
 h1, h2, h3, h4 {
@@ -929,7 +999,7 @@ def format_hud(obs, metadata):
     drought_active = metadata.get("drought_active", False)
     
     msg = f"## 📅 DAY {day}/{max_days} &nbsp;&nbsp;|&nbsp;&nbsp; 💰 FUNDS: ${money:.2f} &nbsp;&nbsp;|&nbsp;&nbsp; 💧 TANK: {water_pct:.0f}% &nbsp;&nbsp;|&nbsp;&nbsp; 🌊 AQUIFER: {obs.aquifer:.0f}L\n\n"
-    msg += f"<div style='margin-top: 12px; margin-bottom: 6px;'>**🌡️ CLIMATE**: <span style='color:#fbbf24'>{climate_type} ({temp}°C)</span></div>"
+    msg += f"<div style='margin-top: 12px; margin-bottom: 6px;'>**🌡️ CLIMATE**: <span style='color:#fbbf24'>{climate_type} ({int(temp)}°C)</span></div>"
     if drought_active:
         msg += " 🔥 <strong style='color:#ef4444'>DROUGHT ACTIVE!</strong>"
     return msg
@@ -1155,67 +1225,105 @@ def create_gradio_ui(env_factory):
                 gr.Markdown("## 🤖 HEURISTIC AUTOMATION")
                 gr.Markdown("> This agent uses a hard-coded **Priority Triage System** to manage the farm.")
                 
-                with gr.Column():
-                    h_hud = gr.Markdown("Loading...", elem_classes=["section-box"])
-                    
-                    with gr.Row():
-                        h_plot_0 = gr.Markdown("Plot 0", elem_classes=["farm-plot"])
-                        h_plot_1 = gr.Markdown("Plot 1", elem_classes=["farm-plot"])
-                    with gr.Row():
-                        h_plot_2 = gr.Markdown("Plot 2", elem_classes=["farm-plot"])
-                        h_plot_3 = gr.Markdown("Plot 3", elem_classes=["farm-plot"])
-                    
-                    gr.Markdown("### 🤖 AGENT CONTROLS")
-                    with gr.Row():
-                        h_status = gr.Markdown("🟡 **IDLE**", elem_classes=["section-box"])
+                with gr.Row():
+                    h_strategy_input = gr.Radio(
+                        choices=["Physics (FAO-56)", "Legacy (Thresholds)"],
+                        value="Physics (FAO-56)",
+                        label="Heuristic Strategy",
+                        info="Physics mode uses ETo/Kc math. Legacy uses 30% moisture thresholds."
+                    )
+                
+                with gr.Row():
+                    with gr.Column(scale=2):
+                        h_hud = gr.Markdown("Loading...", elem_classes=["section-box"])
+                        
+                        with gr.Row():
+                            h_plot_0 = gr.Markdown("Plot 0", elem_classes=["farm-plot"])
+                            h_plot_1 = gr.Markdown("Plot 1", elem_classes=["farm-plot"])
+                        with gr.Row():
+                            h_plot_2 = gr.Markdown("Plot 2", elem_classes=["farm-plot"])
+                            h_plot_3 = gr.Markdown("Plot 3", elem_classes=["farm-plot"])
+                        
+                        gr.Markdown("#### 📝 AGENT REASONING")
+                        h_reasoning = gr.Markdown("*Awaiting first step...*", elem_classes=["section-box"])
+                        
+                        gr.Markdown("#### 📈 MARKET PRICES")
+                        h_market = gr.Markdown("Loading...", elem_classes=["section-box"])
+                        
+                        gr.Markdown("#### 📡 HEURISTIC TELEMETRY")
+                        h_obs_viewer = gr.Code(label="Raw Input (ETo, Moisture, Economics)", language="markdown", interactive=False, elem_classes=["obs-viewer"])
+
+                    with gr.Column(scale=1):
+                        gr.Markdown("### 🤖 AGENT CONTROLS")
+                        with gr.Row():
+                            h_status = gr.Markdown("🟡 **IDLE**", elem_classes=["section-box"])
+                        
                         h_step_btn = gr.Button("▶️ RUN ONE DAY", variant="primary")
                         h_auto_toggle = gr.Checkbox(label="🔄 AUTO-PLAY", value=False)
-                    
-                    h_speed = gr.Slider(minimum=0.5, maximum=5.0, value=1.0, step=0.5, label="Delay (seconds)")
-                    
-                    gr.Markdown("#### 📝 AGENT REASONING")
-                    h_reasoning = gr.Markdown("*Awaiting first step...*", elem_classes=["section-box"])
-                    
-                    h_reset = gr.Button("♻️ RESET ENVIRONMENT")
-
-                    with gr.Row():
-                        with gr.Column(scale=1):
-                            gr.Markdown("#### 📈 MARKET PRICES")
-                            h_market = gr.Markdown("Loading...", elem_classes=["section-box"])
-                        with gr.Column(scale=2):
-                            h_history = gr.JSON(label="📝 Full Action History", visible=True)
+                        h_speed = gr.Slider(minimum=0.5, maximum=5.0, value=1.0, step=0.5, label="Delay (seconds)")
+                        
+                        h_reset = gr.Button("♻️ RESET ENVIRONMENT", variant="secondary")
+                
+                gr.HTML("<hr style='margin: 32px 0; border-color: rgba(255,255,255,0.08)'>")
+                h_history = gr.JSON(label="📝 Full Action History", visible=True)
 
             with gr.Tab("🧠 Hybrid AI"):
-                gr.Markdown("## 🧠 HYBRID (LLM + HEURISTIC)")
-                gr.Markdown("> Uses an **LLM** that evaluates suggestions from the **Heuristic** agent.")
+                gr.Markdown("## 🧠 HYBRID + LLM")
+                ai_auth_error = gr.Markdown(" ", visible=False, elem_classes=["auth-error-box"])
                 
-                with gr.Column():
-                    ai_hud = gr.Markdown("Loading...", elem_classes=["section-box"])
-                    
-                    with gr.Row():
-                        ai_plot_0 = gr.Markdown("Plot 0", elem_classes=["farm-plot"])
-                        ai_plot_1 = gr.Markdown("Plot 1", elem_classes=["farm-plot"])
-                    with gr.Row():
-                        ai_plot_2 = gr.Markdown("Plot 2", elem_classes=["farm-plot"])
-                        ai_plot_3 = gr.Markdown("Plot 3", elem_classes=["farm-plot"])
-                    
-                    gr.Markdown("### 🧠 AI CONTROLS")
-                    with gr.Row():
-                        ai_status = gr.Markdown("🟡 **IDLE**", elem_classes=["section-box"])
+                # Load persistent token if exists
+                token_file = os.path.join(os.path.dirname(__file__), ".hf_token")
+                saved_token = ""
+                if os.path.exists(token_file):
+                    try:
+                        with open(token_file, "r") as f:
+                            saved_token = f.read().strip()
+                    except: pass
+
+                with gr.Row():
+                    with gr.Column(scale=2):
+                        ai_hud = gr.Markdown("Loading...", elem_classes=["section-box"])
+                        
+                        with gr.Row():
+                            ai_plot_0 = gr.Markdown("Plot 0", elem_classes=["farm-plot"])
+                            ai_plot_1 = gr.Markdown("Plot 1", elem_classes=["farm-plot"])
+                        with gr.Row():
+                            ai_plot_2 = gr.Markdown("Plot 2", elem_classes=["farm-plot"])
+                            ai_plot_3 = gr.Markdown("Plot 3", elem_classes=["farm-plot"])
+                        
+                        gr.Markdown("#### 💡 AI THOUGHT TRACE")
+                        ai_reasoning = gr.Markdown("*Awaiting inference...*", elem_classes=["section-box"])
+                        
+                        gr.Markdown("#### 📈 MARKET PRICES")
+                        ai_market = gr.Markdown("Loading...", elem_classes=["section-box"])
+
+                        gr.Markdown("#### 🕵️ AI AUDIT (Blind Test)")
+                        ai_audit_hud = gr.Markdown("*Waiting for inference...*", elem_classes=["section-box", "audit-box"])
+                        
+                        gr.Markdown("#### 🧠 LLM PERCEPTION")
+                        ai_obs_viewer = gr.Code(label="Raw Context (Observation Markdown)", language="markdown", interactive=False, elem_classes=["obs-viewer"])
+
+                    with gr.Column(scale=1):
+                        gr.Markdown("### 🧠 AI CONTROLS")
+                        with gr.Row():
+                            ai_status = gr.Markdown("🟡 **IDLE**", elem_classes=["section-box"])
+                        
                         ai_step_btn = gr.Button("🧠 CONSULT AI", variant="primary")
                         ai_auto_toggle = gr.Checkbox(label="🔄 AUTO-PLAY", value=False)
-                    
-                    gr.Markdown("#### 💡 AI THOUGHT TRACE")
-                    ai_reasoning = gr.Markdown("*Awaiting inference...*", elem_classes=["section-box"])
-                    
-                    ai_reset = gr.Button("♻️ RESET ENVIRONMENT")
+                        
+                        with gr.Accordion("🔑 API Configuration", open=True):
+                            hf_token_input = gr.Textbox(
+                                label="HuggingFace Token (Optional Override)", 
+                                placeholder="hf_...", 
+                                type="password",
+                                value=saved_token
+                            )
+                            gr.Markdown("<small>Token is persisted locally.</small>")
 
-                    with gr.Row():
-                        with gr.Column(scale=1):
-                            gr.Markdown("#### 📈 MARKET PRICES")
-                            ai_market = gr.Markdown("Loading...", elem_classes=["section-box"])
-                        with gr.Column(scale=2):
-                            ai_history = gr.JSON(label="📝 Full Action History", visible=True)
+                        ai_reset = gr.Button("♻️ RESET ENVIRONMENT", variant="secondary")
+                
+                gr.HTML("<hr style='margin: 32px 0; border-color: rgba(255,255,255,0.08)'>")
+                ai_history = gr.JSON(label="📝 Full Action History", visible=True)
 
             with gr.Tab("📖 Documentation"):
                 gr.HTML(DOCS_HTML)
@@ -1223,8 +1331,8 @@ def create_gradio_ui(env_factory):
         # Output states matching in update function
         # We need to update Dashboard, Heuristic Tab, and Hybrid Tab
         base_outputs = [hud_md] + plot_mds + [seeds_md, storage_md, market_md, action_feed, history_display, status_box, episode_stats]
-        h_outputs = [h_hud, h_plot_0, h_plot_1, h_plot_2, h_plot_3, h_reasoning, h_status, h_market, h_history]
-        ai_outputs = [ai_hud, ai_plot_0, ai_plot_1, ai_plot_2, ai_plot_3, ai_reasoning, ai_status, ai_market, ai_history]
+        h_outputs = [h_hud, h_plot_0, h_plot_1, h_plot_2, h_plot_3, h_reasoning, h_status, h_market, h_history, h_obs_viewer]
+        ai_outputs = [ai_hud, ai_plot_0, ai_plot_1, ai_plot_2, ai_plot_3, ai_reasoning, ai_status, ai_market, ai_history, ai_audit_hud, ai_auth_error, ai_obs_viewer]
         all_outputs = base_outputs + h_outputs + ai_outputs
 
         # Agent Instances
@@ -1250,14 +1358,39 @@ def create_gradio_ui(env_factory):
             os.environ["CURRENT_AGENT_REASONING"] = reasoning
             out_hud = format_hud(obs, metadata)
             
-            # Agent Tabs
-            h_status_val = f"**{status}**"
-            ai_status_val = f"**{status}**"
-            
+            # AI Audit Formatting
+            ai_audit_msg = "*Awaiting first AI action...*"
+            last_history = metadata.get("action_history", [])
+            if last_history:
+                last_act = last_history[-1].get("action", {})
+                fidelity = last_act.get("fidelity")
+                tactical = last_act.get("tactical")
+                
+                if fidelity and tactical:
+                    f_score = fidelity.get("overall_fidelity", 0) * 100
+                    t_score = tactical.get("tactical_score", 0) * 100
+                    h_alert = "⚠️ **HALLUCINATION DETECTED!**" if fidelity.get("hallucination_detected") else "✅ Perception Clean"
+                    
+                    ai_audit_msg = textwrap.dedent(f"""
+                        **AI Awareness:** {f_score:.0f}% | **Tactical Precision:** {t_score:.0f}%
+                        {h_alert}
+                        
+                        *Audit compares AI's thinking vs hidden environment state.*
+                    """).strip()
+
+            # Auth Error Logic (Shifted to Banner)
+            err_banner = gr.update(visible=False, value="")
+            if reasoning and "AUTH ERROR (401)" in reasoning:
+                err_banner = gr.update(
+                    visible=True, 
+                    value=f"### ❌ AUTHENTICATION ERROR (401)\n\n**Please check your HuggingFace Token in the Control Panel.**\n\n*The Hybrid Agent is currently falling back to its internal Heuristic logic.*"
+                )
+                reasoning = "*LLM Access Restricted*"
+
             return tuple(
                 [out_hud] + out_plots + [out_seeds, out_storage, out_market, out_msg, out_history, out_json, metadata] +
-                [out_hud] + out_plots + [reasoning, h_status_val, out_market, out_history] +
-                [out_hud] + out_plots + [reasoning, ai_status_val, out_market, out_history]
+                [out_hud] + out_plots + [reasoning, status, out_market, out_history, obs.text_summary] +
+                [out_hud] + out_plots + [reasoning, status, out_market, out_history, ai_audit_msg, err_banner, obs.text_summary]
             )
 
         def handle_reset(tid):
@@ -1280,19 +1413,29 @@ def create_gradio_ui(env_factory):
             env.step(action)
             return get_status()
 
-        def handle_agent_step(mode):
+        def handle_agent_step(mode, token=None, h_strategy="Physics (FAO-56)"):
             try:
                 env = env_factory()
                 obs = env.get_observation()
                 
+                # Persist token if provided
+                if mode == "ai" and token and token.strip():
+                    token_file = os.path.join(os.path.dirname(__file__), ".hf_token")
+                    try:
+                        with open(token_file, "w") as f:
+                            f.write(token.strip())
+                    except: pass
+
                 print(f"[AGENT] Running {mode.upper()} step on Day {obs.day}...")
                 
                 if mode == "heuristic":
-                    action, thought = h_agent.act(obs)
+                    algo_mode = "physics" if "Physics" in h_strategy else "legacy"
+                    action, thought = h_agent.act(obs, mode=algo_mode)
                 else:
-                    action, thought = ai_agent.act(obs)
+                    res = ai_agent.act(obs, api_token=token)
+                    action, thought = res["action"], res["thought"]
                 
-                print(f"[AGENT] Action: {action['action_type']} | Reasoning: {thought}")
+                print(f"[AGENT] Action: {action.get('action_type', 'wait')} | Reasoning: {thought}")
                 
                 env.step(action)
                 return get_status(reasoning=thought, status="🏃 RUNNING")
@@ -1318,17 +1461,17 @@ def create_gradio_ui(env_factory):
         sell_btn.click(lambda p, q, s: handle_action("sell", p, q, s), inputs=[plot_selector, quantity, seed_type], outputs=all_outputs)
         
         # Agent Controls
-        h_step_btn.click(lambda: handle_agent_step("heuristic"), outputs=all_outputs)
-        ai_step_btn.click(lambda: handle_agent_step("ai"), outputs=all_outputs)
+        h_step_btn.click(lambda s: handle_agent_step("heuristic", h_strategy=s), inputs=[h_strategy_input], outputs=all_outputs)
+        ai_step_btn.click(lambda t, s: handle_agent_step("ai", token=t, h_strategy=s), inputs=[hf_token_input, h_strategy_input], outputs=all_outputs)
         h_reset.click(lambda t: handle_reset(t), inputs=[task_id_input], outputs=all_outputs)
         ai_reset.click(lambda t: handle_reset(t), inputs=[task_id_input], outputs=all_outputs)
 
         # Timer Logic for Auto-Play (Gradio 4)
         h_timer = gr.Timer(1.0, active=True)
-        h_timer.tick(lambda auto: handle_agent_step("heuristic") if auto else gr.skip(), inputs=[h_auto_toggle], outputs=all_outputs)
+        h_timer.tick(lambda auto, s: handle_agent_step("heuristic", h_strategy=s) if auto else gr.skip(), inputs=[h_auto_toggle, h_strategy_input], outputs=all_outputs)
         
         ai_timer = gr.Timer(2.0, active=True) # AI is slower
-        ai_timer.tick(lambda auto: handle_agent_step("ai") if auto else gr.skip(), inputs=[ai_auto_toggle], outputs=all_outputs)
+        ai_timer.tick(lambda auto, tok, s: handle_agent_step("ai", tok, h_strategy=s) if auto else gr.skip(), inputs=[ai_auto_toggle, hf_token_input, h_strategy_input], outputs=all_outputs)
         
         # Toggle Timers (Gradio 4 timers are active by default, so we control via logic)
         h_auto_toggle.change(lambda x: x, inputs=[h_auto_toggle], outputs=[h_auto_toggle])

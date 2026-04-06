@@ -35,38 +35,35 @@ ENV_BASE_URL      = os.getenv("FARMING_ENV_URL", "http://localhost:7860")
 MAX_STEPS         = int(os.getenv("MAX_STEPS", "30"))
 EPISODES_PER_TASK = int(os.getenv("EPISODES", "1"))
 TEMPERATURE       = 0.2
-MAX_TOKENS        = 150
+MAX_TOKENS        = 300
 
 
 FALLBACK_ACTION: Dict[str, Any] = {"action_type": "wait"}
 
 SYSTEM_PROMPT = textwrap.dedent("""
-    You are a farming agent controlling a farm simulation.
-    You will receive the current farm state as plain text.
-    Reply with EXACTLY ONE JSON action object and nothing else.
-    No explanation. No markdown. No code blocks. Raw JSON only.
-
-    Valid action formats:
-        {"action_type": "wait"}
-        {"action_type": "buy_seeds",  "seed_type": "wheat|rice|corn", "quantity": N}
-        {"action_type": "plant",      "plot_id": 0-3, "seed_type": "wheat|rice|corn"}
-        {"action_type": "irrigate",   "plot_id": 0-3}
-        {"action_type": "harvest",    "plot_id": 0-3}
-        {"action_type": "sell",       "seed_type": "wheat|rice|corn", "quantity": N}
-
-    Rules:
-    - plot_id is always an integer: 0, 1, 2, or 3
-    - quantity is always a positive integer
-    - seed_type is always one of: wheat, rice, corn
-    - If unsure, output: {"action_type": "wait"}
-
-    Strategy tips:
-    - Buy seeds first, then plant immediately on every empty plot
-    - Irrigate when soil_moisture drops below 0.35
-    - Harvest the instant a plot shows READY TO HARVEST — every day you wait risks withering
-    - Sell when the market trend shows "up" for that crop
-    - Never leave plots empty when you have seeds in hand
-    - In arid climate, irrigate more aggressively to prevent crop death
+    You are the CHIEF ECONOMIST & GROWTH STRATEGIST.
+    Goal: Maximize NET WORTH through "Balanced Exponential Growth."
+    
+    STRATEGIC HIERARCHY:
+    1. SURVIVAL (Priority 1): Maintain > 3 days of Water Runway and Moisture > RAW Depletion Limit (e.g., Rice: 80%, Corn: 50%, Wheat: 45%).
+    2. GROWTH: 
+       - If Money > $150: Plant CORN (Highest yield).
+       - If Money > $80: Plant RICE.
+    3. MARKET TIMING (Peak Detection):
+       - HODL storage if Current Price < 7-day Average.
+       - SELL ALL if Current Price > 7-day Average AND Premium > 10%.
+    
+    REASONING STRUCTURE:
+    - RISK AUDIT: Moisture Stress? Tank Critical?
+    - MARKET AUDIT: Is current price at a 7-day peak?
+    - ACTION: Prioritize EXPANSION if survival is secure.
+    
+    OUTPUT FORMAT (Strict JSON):
+    {
+      "fidelity_audit": {"runway_days": float, "net_worth": float, "is_peak": bool},
+      "action": {"action_type": "...", "plot_id": 0-3, "seed_type": "...", "quantity": 1},
+      "thought": "Deep audit of Runway, 7-day Price Delta, and Growth ROI."
+    }
 """).strip()
 
 # ---------------------------------------------------------------------------
@@ -239,12 +236,18 @@ def run_episode(
             error_msg = str(exc)
             diag(f"    [error] LLM call failed at step {step_num}: {exc}")
 
-        orig_action = parse_action(response_text)
-        action = validate_action(orig_action)
+        orig_response = parse_action(response_text)
+        action = validate_action(orig_response.get("action", orig_response))
+        thought = orig_response.get("thought")
+        state_summary = orig_response.get("state_summary")
         action_str = json.dumps(action)
 
         # ── Env step ──────────────────────────────────────────────────────
         try:
+            # We inject the thought and summary for logging
+            if isinstance(action, dict):
+                action["thought"] = thought
+                action["state_summary"] = state_summary
             obs = env.step(action)
         except Exception as exc:
             diag(f"    [error] env.step() failed at step {step_num}: {exc}")
