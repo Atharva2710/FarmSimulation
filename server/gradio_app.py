@@ -1221,7 +1221,7 @@ def create_gradio_ui(env_factory):
 
             # ── AGENT TABS ───────────────────────────────────────────────
             
-            with gr.Tab("🤖 Auto-Heuristic"):
+            with gr.Tab("🤖 Auto-Heuristic") as h_tab:
                 gr.Markdown("## 🤖 HEURISTIC AUTOMATION")
                 gr.Markdown("> This agent uses a hard-coded **Priority Triage System** to manage the farm.")
                 
@@ -1267,7 +1267,7 @@ def create_gradio_ui(env_factory):
                 gr.HTML("<hr style='margin: 32px 0; border-color: rgba(255,255,255,0.08)'>")
                 h_history = gr.JSON(label="📝 Full Action History", visible=True)
 
-            with gr.Tab("🧠 Hybrid AI"):
+            with gr.Tab("🧠 Hybrid AI") as ai_tab:
                 gr.Markdown("## 🧠 HYBRID + LLM")
                 ai_auth_error = gr.Markdown(" ", visible=False, elem_classes=["auth-error-box"])
                 
@@ -1404,7 +1404,21 @@ def create_gradio_ui(env_factory):
             env = env_factory()
             os.environ["FARMING_TASK_ID"] = str(int(tid))
             env.reset(task_id=int(tid))
-            return get_status(reasoning="Environment Reset.")["all"]
+            # Fix 2: Return only Dashboard outputs — not all 30+ outputs.
+            # Returning all_outputs forces all tabs to re-render and blocks the queue.
+            return get_status(reasoning="Environment Reset.")["dashboard"]
+
+        def handle_reset_heuristic(tid):
+            env = env_factory()
+            os.environ["FARMING_TASK_ID"] = str(int(tid))
+            env.reset(task_id=int(tid))
+            return get_status(reasoning="Environment Reset.")["heuristic"]
+
+        def handle_reset_hybrid(tid):
+            env = env_factory()
+            os.environ["FARMING_TASK_ID"] = str(int(tid))
+            env.reset(task_id=int(tid))
+            return get_status(reasoning="Environment Reset.")["hybrid"]
 
         def handle_action(action_type, p_id, qty, s_type):
             env = env_factory()
@@ -1453,8 +1467,16 @@ def create_gradio_ui(env_factory):
                 return get_status(reasoning=f"❌ ERROR: {str(e)}", status="🔴 CRASHED")
 
         # Event Handlers
-        ui.load(lambda: get_status()["all"], outputs=all_outputs)
-        reset_btn.click(handle_reset, inputs=[task_id_input], outputs=all_outputs)
+        # Fix 1: Only load Dashboard outputs on startup — not all 30+ outputs.
+        # Loading all_outputs on ui.load blocks the WebSocket queue and freezes tab switching.
+        ui.load(lambda: get_status()["dashboard"], outputs=base_outputs)
+
+        # Fix 5: Lazy-load agent tabs only when the user actually clicks on them.
+        # Previously nothing populated these tabs until a button was clicked, causing
+        # them to show stale "Loading..." placeholders. Now they hydrate on tab select.
+        h_tab.select(lambda: get_status()["heuristic"], outputs=h_outputs)
+        ai_tab.select(lambda: get_status()["hybrid"], outputs=ai_outputs)
+        reset_btn.click(handle_reset, inputs=[task_id_input], outputs=base_outputs)
         wait_btn.click(lambda p, q, s: handle_action("wait", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
         buy_btn.click(lambda p, q, s: handle_action("buy_seeds", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
         pump_btn.click(lambda p, q, s: handle_action("pump_water", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
@@ -1470,8 +1492,9 @@ def create_gradio_ui(env_factory):
         # Agent Controls
         h_step_btn.click(lambda s: handle_agent_step("heuristic", h_strategy=s)["heuristic"], inputs=[h_strategy_input], outputs=h_outputs)
         ai_step_btn.click(lambda t, s: handle_agent_step("ai", token=t, h_strategy=s)["hybrid"], inputs=[hf_token_input, h_strategy_input], outputs=ai_outputs)
-        h_reset.click(lambda t: handle_reset(t), inputs=[task_id_input], outputs=all_outputs)
-        ai_reset.click(lambda t: handle_reset(t), inputs=[task_id_input], outputs=all_outputs)
+        # Fix 2b: h_reset and ai_reset should only update their own tab's outputs
+        h_reset.click(lambda t: handle_reset_heuristic(t), inputs=[task_id_input], outputs=h_outputs)
+        ai_reset.click(lambda t: handle_reset_hybrid(t), inputs=[task_id_input], outputs=ai_outputs)
 
         # Timer Logic for Auto-Play (Gradio 4)
         h_timer = gr.Timer(1.0, active=False)
@@ -1480,11 +1503,26 @@ def create_gradio_ui(env_factory):
         ai_timer = gr.Timer(2.0, active=False) # AI is slower
         ai_timer.tick(lambda tok, s: handle_agent_step("ai", tok, h_strategy=s)["hybrid"], inputs=[hf_token_input, h_strategy_input], outputs=ai_outputs)
         
-        # Toggle Timers (Gradio 4 timers are active by default, so we control via logic)
-        h_auto_toggle.change(lambda x: gr.Timer(active=x), inputs=[h_auto_toggle], outputs=[h_timer])
-        ai_auto_toggle.change(lambda x: gr.Timer(active=x), inputs=[ai_auto_toggle], outputs=[ai_timer])
+        # Fix 4: Use gr.update(active=x) instead of creating a new gr.Timer instance.
+        # Creating a new gr.Timer() on every toggle leaks timers and floods the server.
+        h_auto_toggle.change(lambda x: gr.update(active=x), inputs=[h_auto_toggle], outputs=[h_timer])
+        ai_auto_toggle.change(lambda x: gr.update(active=x), inputs=[ai_auto_toggle], outputs=[ai_timer])
 
-        show_debug_btn.click(lambda: gr.update(visible=not status_box.visible), outputs=[status_box])
-        show_history_btn.click(lambda: gr.update(visible=not history_display.visible), outputs=[history_display])
+        # Fix 3: Use gr.State to track visibility — status_box.visible is a build-time
+        # attribute, not a live runtime value, so `not status_box.visible` always returns
+        # the same thing and the toggle breaks (and can crash the queue).
+        debug_visible = gr.State(False)
+        history_visible = gr.State(False)
+
+        def toggle_debug(current):
+            new_val = not current
+            return gr.update(visible=new_val), new_val
+
+        def toggle_history(current):
+            new_val = not current
+            return gr.update(visible=new_val), new_val
+
+        show_debug_btn.click(toggle_debug, inputs=[debug_visible], outputs=[status_box, debug_visible])
+        show_history_btn.click(toggle_history, inputs=[history_visible], outputs=[history_display, history_visible])
 
     return ui
