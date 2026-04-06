@@ -59,6 +59,10 @@ class PlotState(BaseModel):
     has_pests:      bool           = Field(False)
     pest_severity:  float          = Field(0.0, ge=0.0, le=1.0)
     pesticide_protection: int      = Field(0, ge=0, description="days of residual protection remaining")
+    
+    # Tactical Audit Metrics
+    days_mature:    int            = Field(0, ge=0, description="latency since maturity")
+    days_critical:  int            = Field(0, ge=0, description="duration in near-death state")
 
 
 class ClimateState(BaseModel):
@@ -73,14 +77,15 @@ class MarketPrice(BaseModel):
     buy_price:  float = Field(..., gt=0.0, description="cost per seed unit")
     sell_price: float = Field(..., gt=0.0, description="revenue per kg harvested")
     trend:      float = Field(0.0, ge=-1.0, le=1.0, description="price direction hint")
+    avg_7d:     float = Field(0.0, description="7-day rolling average sell price")
 
 
 # ── Config constants ─────────────────────────────────────────────────────────
 
 SEED_CONFIG: Dict[str, Dict[str, Any]] = {
-    "wheat": {"grow_days": 7,  "water_need": 0.3, "yield_kg": 10.0, "base_buy": 5.0,  "base_sell": 8.0,  "npk_drain": [0.05, 0.02, 0.03]},
-    "rice":  {"grow_days": 12, "water_need": 0.7, "yield_kg": 20.0, "base_buy": 8.0,  "base_sell": 14.0, "npk_drain": [0.03, 0.04, 0.05]},
-    "corn":  {"grow_days": 18, "water_need": 0.5, "yield_kg": 35.0, "base_buy": 12.0, "base_sell": 20.0, "npk_drain": [0.08, 0.04, 0.02]},
+    "wheat": {"grow_days": 7,  "water_need": 0.3, "yield_kg": 10.0, "base_buy": 5.0,  "base_sell": 8.0,  "npk_drain": [0.05, 0.02, 0.03], "Kc": 0.80, "p": 0.55},
+    "rice":  {"grow_days": 12, "water_need": 0.7, "yield_kg": 20.0, "base_buy": 8.0,  "base_sell": 14.0, "npk_drain": [0.03, 0.04, 0.05], "Kc": 1.10, "p": 0.20},
+    "corn":  {"grow_days": 18, "water_need": 0.5, "yield_kg": 35.0, "base_buy": 12.0, "base_sell": 20.0, "npk_drain": [0.08, 0.04, 0.02], "Kc": 1.20, "p": 0.50},
 }
 
 CLIMATE_CONFIG: Dict[str, Dict[str, float]] = {
@@ -108,10 +113,14 @@ PESTICIDE_COST:      float  = 1.5     # cost to run spray_pesticide
 # ── Action / Observation / State ─────────────────────────────────────────────
 
 class FarmAction(Action):
-    action_type: str           = Field(..., description="buy_seeds/plant/irrigate/harvest/sell/wait/pump_water/apply_fertilizer/spray_pesticide/pull_weeds")
-    plot_id:     Optional[int] = Field(None, ge=0, le=3, description="required for plot interactions")
-    seed_type:   Optional[str] = Field(None, description="required for buy_seeds and plant")
-    quantity:    Optional[int] = Field(None, gt=0, description="seeds to buy or kg to sell")
+    action_type:   str           = Field(..., description="buy_seeds/plant/irrigate/harvest/sell/wait/pump_water/apply_fertilizer/spray_pesticide/pull_weeds")
+    plot_id:       Optional[int] = Field(None, ge=0, le=3, description="required for plot interactions")
+    seed_type:     Optional[str] = Field(None, description="required for buy_seeds and plant")
+    quantity:      Optional[int] = Field(None, gt=0, description="seeds to buy or kg to sell")
+    
+    # Audit metadata
+    thought:       Optional[str] = Field(None)
+    state_summary: Optional[Dict[str, Any]] = Field(None)
 
 
 class FarmObservation(Observation):

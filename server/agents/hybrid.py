@@ -7,7 +7,7 @@ from openai import OpenAI
 import textwrap
 
 from .heuristic import HeuristicAgent
-from models import FarmObservation
+from models import FarmObservation, SEED_CONFIG
 
 # Constants for LLM
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
@@ -26,97 +26,178 @@ class HybridAgent:
         self.name = f"Hybrid (LLM+{MODEL_NAME})"
         
         self.system_prompt = textwrap.dedent("""
-            You are the STRATEGIC COMMANDER of an automated farm. 
-            You must process high-resolution sensor data and make optimal decisions.
+            You are the CHIEF ECONOMIST & GROWTH STRATEGIST.
+            Goal: Maximize NET WORTH through "Balanced Exponential Growth."
             
-            CONNECTION RULES (Observation -> Action):
-            1. IF Soil Moisture < 0.5 AND Water Tank > 15L -> ACTION: irrigate
-            2. IF Pests Present AND Money >= 1.5 -> ACTION: spray_pesticide (CRITICAL)
-            3. IF Plot Empty AND Money > 50 -> ACTION: plant corn (HIGH ROI)
-            4. IF Plot Empty AND Money < 20 -> ACTION: plant wheat (CASH FLOW)
+            STRATEGIC HIERARCHY:
+            1. SURVIVAL (Priority 1): Maintain > 3 days of Water Runway and Moisture > RAW Depletion Limit (e.g., Rice: 80%, Corn: 50%, Wheat: 45%).
+            2. PUMPING: If Tank < 15L and Runway < 5 days, PUMP water.
+            3. EXPONENTIAL GROWTH (Priority 2):
+               - If Money > $150: Plant CORN (Highest yield).
+               - If Money > $80: Plant RICE.
+               - Otherwise: Plant WHEAT.
+            4. MARKET TIMING (Peak Detection):
+               - HODL storage if Current Price < 7-day Average.
+               - SELL ALL if Current Price > 7-day Average AND Premium > 10%.
             
-            Your decision-making process MUST follow this hierarchy:
-            - SURVIVAL: Stop Pests, Weeds, and Dehydration.
-            - EXPANSION: Fill every empty plot as fast as possible.
-            - ROI: Plant Corn ($12) for high profit; Wheat ($5) for quick cash.
-            - LIQUIDATION: Sell crops only if prices are stable or rising.
+            REASONING STRUCTURE:
+            - RISK AUDIT: Moisture Stress? Tank Critical?
+            - MARKET AUDIT: Is current price at a 7-day peak?
+            - ACTION: Prioritize EXPANSION if survival is secure.
             
             OUTPUT FORMAT (Strict JSON):
             {
-              "analysis": "Brief analysis of current threats and opportunities",
-              "action": {"action_type": "...", "plot_id": 0-3, ...},
-              "thought": "Why this action is the most intelligent choice based on the data"
+              "fidelity_audit": {"runway_days": float, "net_worth": float, "is_peak": bool},
+              "action": {"action_type": "...", "plot_id": 0-3, "seed_type": "...", "quantity": 1},
+              "thought": "Deep audit of Runway, 7-day Price Delta, and Growth ROI."
             }
         """).strip()
 
     def _build_state_text(self, obs: FarmObservation) -> str:
         """Converts the observation into a clean text summary for the LLM."""
+        # Telemetry Calculations
+        temp = getattr(obs.climate, "temperature", 22.0)
+        hum = getattr(obs.climate, "humidity", 0.6)
+        eto = (temp / 100.0) * (1.1 - hum)
+        
+        # Calculate Economics
+        storage_val = sum(qty * obs.market_prices[c].sell_price for c, qty in obs.storage.items() if c in obs.market_prices)
+        inv_val = sum(qty * SEED_CONFIG[c]['base_buy'] for c, qty in obs.seed_inventory.items() if c in SEED_CONFIG)
+        net_worth = obs.money + storage_val + inv_val
+        
+        # Calculate Water Runway (Days)
+        total_etc = sum((eto * SEED_CONFIG[p.crop_type if p.crop_type else 'wheat'].get('Kc', 1.0)) for p in obs.plots if p.stage not in ['empty', 'withered'])
+        runway = (obs.water_tank / total_etc) if total_etc > 0 else 99
+
         lines = [
-            f"Day: {obs.day}",
-            f"Money: ${obs.money:.2f}",
-            f"Water Tank: {obs.water_tank:.1f}L / 100L",
-            f"Aquifer: {obs.aquifer:.1f}L",
-            f"Inventory: {obs.seed_inventory}",
-            f"Storage: {obs.storage}",
-            f"Climate: {obs.climate.climate_type} ({obs.climate.temperature}°C, {obs.climate.humidity*100:.0f}% Humidity)",
+            f"--- ECONOMIC DASHBOARD (Day {obs.day}) ---",
+            f"NET WORTH: ${net_worth:.2f} | MONEY: ${obs.money:.2f}",
+            f"WATER SECURITY: {obs.water_tank:.1f}L | RUNWAY: {runway:.1f} DAYS",
+            f"CLIMATE: {obs.climate.climate_type} (ETo: {eto:.3f})",
+            f"STORAGE: {obs.storage}",
+            "\nMARKET INTELLIGENCE (Current vs 7-Day Avg):",
         ]
-        lines.append("\nPlots:")
+        
+        for seed, cfg in SEED_CONFIG.items():
+            market = obs.market_prices.get(seed)
+            if market:
+                premium = ((market.sell_price / cfg['base_sell']) - 1) * 100
+                lines.append(f"- {seed.upper()}: ${market.sell_price:.2f} ({premium:+.1f}% vs Base), Trend: {market.trend:+.2f}")
+
+        lines.append("\nPLOT STATUS & PROJECTIONS:")
         for p in obs.plots:
-            lines.append(f"- Plot {p.plot_id}: {p.stage} {p.crop_type if p.crop_type else ''} (Health: {p.health*100:.0f}%, Water: {p.soil_moisture*100:.0f}%)")
-            if p.has_pests: lines.append(f"  [!] PESTS DETECTED (Severity: {p.pest_severity*100:.0f}%)")
-            if p.has_weeds: lines.append(f"  [!] WEEDS DETECTED")
-            if p.pesticide_protection > 0: lines.append(f"  [Shield: {p.pesticide_protection} days]")
+            if p.stage == "empty": continue
+            
+            crop_cfg = SEED_CONFIG.get(p.crop_type, {})
+            p_const = crop_cfg.get("p", "N/A")
+            kc = crop_cfg.get("Kc", 1.0)
+            yield_kg = crop_cfg.get("yield_kg", 0)
+            etc = eto * kc
+            proj_val = yield_kg * (obs.market_prices[p.crop_type].sell_price if p.crop_type in obs.market_prices else 0)
+            
+            status = f"- Plot {p.plot_id}: {p.stage} {p.crop_type if p.crop_type else ''}"
+            vitals = f"  Moisture: {p.soil_moisture*100:.1f}% | RAW: {p_const} | ETc: {etc:.3f} | Proj $: {proj_val:.2f}"
+            lines.append(status + "\n" + vitals)
             
         return "\n".join(lines)
 
-    def act(self, obs: FarmObservation) -> Tuple[Dict[str, Any], str]:
+    def act(self, obs: FarmObservation, api_token: Optional[str] = None) -> Dict[str, Any]:
         """
-        1. Run Heuristic to get advice.
-        2. Combine advice with state in prompt.
-        3. Call LLM for final decision.
+        1. Run Heuristic to get safe advice.
+        2. Call LLM for strategic optimization.
         """
-        # 1. Get Heuristic Suggestion
+        if api_token and api_token.strip():
+            if not hasattr(self, "_last_token") or self._last_token != api_token:
+                self.client = OpenAI(base_url=API_BASE_URL, api_key=api_token)
+                self._last_token = api_token
+        
+        # 1. Get Heuristic Suggestion (Safety Fallback)
         h_action, h_thought = self.heuristic.act(obs)
         
         # 2. Build Message
         state_text = self._build_state_text(obs)
-        user_message = f"""
-        --- SENSOR DATA (Day {obs.day}) ---
-        {state_text}
+        user_message = textwrap.dedent(f"""
+            --- SENSOR DATA (Day {obs.day}) ---
+            {state_text}
+            
+            --- HEURISTIC ADVISORY (SAFETY FALLBACK) ---
+            Suggestion: {json.dumps(h_action)}
+            Logic: {h_thought}
+            
+            --- TRIAGE AUDIT TEMPLATE ---
+            1. RISK AUDIT: Moisture Stress? Runway Panic?
+            2. MARKET AUDIT: Is current sell premium > 10%?
+            3. ACTION: Choose the action that maximizes long-term ROI.
+            
+            Reply with exactly one JSON object.
+        """).strip()
         
-        --- MARKET INTEL ---
-        {json.dumps(obs.model_dump().get("market_prices", {}), indent=2)}
+        # Build Fidelity Audit Data
+        storage_val = sum(qty * obs.market_prices[c].sell_price for c, qty in obs.storage.items() if c in obs.market_prices)
+        inv_val = sum(qty * SEED_CONFIG[c]['base_buy'] for c, qty in obs.seed_inventory.items() if c in SEED_CONFIG)
+        net_worth = obs.money + storage_val + inv_val
         
-        --- HEURISTIC ADVISORY (Optimal Rules) ---
-        The system logic suggests: {json.dumps(h_action)}
-        Rule Justification: {h_thought}
+        temp = getattr(obs.climate, "temperature", 22.0)
+        hum = getattr(obs.climate, "humidity", 0.6)
+        eto = (temp / 100.0) * (1.1 - hum)
+        total_etc = sum((eto * SEED_CONFIG[p.crop_type if p.crop_type else 'wheat'].get('Kc', 1.0)) for p in obs.plots if p.stage not in ['empty', 'withered'])
+        runway = (obs.water_tank / total_etc) if total_etc > 0 else 99
         
-        Analyze the sensor data and market intel. Compare it to the heuristic advisory. 
-        If the heuristic is moving too slow or picking low-yield seeds, override it for higher ROI.
-        """
-        
+        fidelity = {
+            "runway_days": round(runway, 2),
+            "net_worth": round(net_worth, 2),
+            "hallucination_detected": False # Placeholder
+        }
+
         try:
+            if not api_token or not api_token.strip():
+                raise Exception("401: Unauthorized")
+
             response = self.client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=[
                     {"role": "system", "content": self.system_prompt},
                     {"role": "user", "content": user_message}
                 ],
-                max_tokens=250,
-                temperature=0.2
+                max_tokens=300,
+                temperature=0.1
             )
             
             raw_text = response.choices[0].message.content
-            # Attempt to parse JSON from response
             match = re.search(r'(\{.*\})', raw_text, re.DOTALL)
             if match:
                 data = json.loads(match.group(1))
                 action = data.get("action", h_action)
-                analysis = data.get("analysis", "State analyzed.")
-                thought = data.get("thought", "Determined via strategic correlation.")
-                return action, f"🧠 {analysis} | {thought}"
+                thought = data.get("thought", "Strategic execution via market analysis.")
+                audit = data.get("fidelity_audit", {})
+                
+                # Merge for logging
+                if isinstance(action, dict):
+                    action["thought"] = thought
+                    action["state_summary"] = audit # Use audit for state summary field
+                
+                return {
+                    "action": action,
+                    "thought": f"🧠 {thought}",
+                    "fidelity_audit": fidelity
+                }
             
-            return h_action, f"Error: LLM returned unparseable response. Falling back to Heuristic. ({raw_text[:50]}...)"
+            return {
+                "action": h_action,
+                "thought": "Error: Unparseable response. Falling back to Safety Mode.",
+                "fidelity_audit": fidelity
+            }
             
         except Exception as e:
-            return h_action, f"Error: LLM call failed ({str(e)}). Falling back to Heuristic."
+            err_str = str(e)
+            if "401" in err_str or "unauthorized" in err_str.lower():
+                return {
+                    "action": h_action,
+                    "thought": f"❌ AUTH ERROR (401): Please check your HF Token in the control panel.",
+                    "fidelity_audit": fidelity
+                }
+            return {
+                "action": h_action,
+                "thought": f"❌ LLM ERROR: {err_str}. Using Safety Mode.",
+                "fidelity_audit": fidelity
+            }
