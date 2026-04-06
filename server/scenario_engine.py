@@ -19,25 +19,17 @@ class ScenarioEngine:
             "difficulty_scores": {1: 0.0, 2: 0.0, 3: 0.0}
         }
 
-    def run_tests(
+    async def run_tests_stream(
         self, 
         difficulty: Optional[int] = None, 
         seed: int = 42, 
         hf_token: Optional[str] = None, 
         model_name: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Runs the test suite with configuration injection."""
+        """Async generator for test results."""
+        import asyncio
         random.seed(seed)
         self.results = []
-        
-        # Inject metadata if HybridAgent
-        if isinstance(self.agent, HybridAgent):
-            if model_name: 
-                import os
-                # This affects the global MODEL_NAME if imported in hybrid.py, 
-                # but better to update the instance property if it exists.
-                # Since HybridAgent uses MODEL_NAME from os.environ, we update OS env.
-                os.environ["MODEL_NAME"] = model_name
         
         test_queue = [s for s in SCENARIOS if difficulty is None or s.difficulty == difficulty]
         
@@ -46,36 +38,30 @@ class ScenarioEngine:
         difficulty_passed = {1: 0, 2: 0, 3: 0}
 
         for i, scenario in enumerate(test_queue):
-            print(f"[ENGINE] Running Scenario {i+1}/{len(test_queue)}: {scenario.name}...")
             obs = scenario.get_observation(seed=seed)
-            
             try:
-                # Execution with timeout/loop protection
                 start_time = time.time()
                 
-                # Call agent
+                # We wrap the sync act() in a thread to keep UI responsive
                 if isinstance(self.agent, HybridAgent):
-                    res = self.agent.act(obs, api_token=hf_token)
-                    # Handle dict return
+                    # Use asyncio.to_thread for the blocking LLM call
+                    res = await asyncio.to_thread(self.agent.act, obs, api_token=hf_token)
                     action = res["action"]
                     thought = res["thought"]
                 else:
                     action, thought = self.agent.act(obs)
                 
                 duration = time.time() - start_time
-                
-                # Validation
                 act_type = action.get("action_type") if isinstance(action, dict) else action
                 is_passed = act_type in scenario.expected_actions
-                
                 status = "✅ PASS" if is_passed else "❌ FAIL"
+                
                 if is_passed:
                     passed_count += 1
                     difficulty_passed[scenario.difficulty] += 1
-                
                 difficulty_counts[scenario.difficulty] += 1
                 
-                self.results.append({
+                result = {
                     "id": i + 1,
                     "name": scenario.name,
                     "difficulty": scenario.difficulty,
@@ -84,11 +70,13 @@ class ScenarioEngine:
                     "thought": thought,
                     "status": status,
                     "duration": round(duration, 3)
-                })
+                }
+                self.results.append(result)
+                yield result
                 
             except Exception as e:
-                print(f"[ENGINE] Error in Scenario {scenario.name}: {e}")
-                self.results.append({
+                difficulty_counts[scenario.difficulty] += 1
+                err_result = {
                     "id": i + 1,
                     "name": scenario.name,
                     "difficulty": scenario.difficulty,
@@ -97,21 +85,15 @@ class ScenarioEngine:
                     "thought": f"Crash: {str(e)}",
                     "status": "💥 CRASH",
                     "duration": 0.0
-                })
-                difficulty_counts[scenario.difficulty] += 1
+                }
+                self.results.append(err_result)
+                yield err_result
 
-        # Summary calculations
+        # Final Summary
         total = len(self.results)
         self.summary["passed"] = passed_count
         self.summary["failed"] = total - passed_count
         self.summary["score"] = (passed_count / total * 100) if total > 0 else 0
+        self.summary["total"] = total
         
-        for d in [1, 2, 3]:
-            count = difficulty_counts[d]
-            if count > 0:
-                self.summary["difficulty_scores"][d] = round((difficulty_passed[d] / count * 100), 1)
-
-        return {
-            "summary": self.summary,
-            "results": self.results
-        }
+        yield {"summary": self.summary}
