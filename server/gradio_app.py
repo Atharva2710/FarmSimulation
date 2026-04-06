@@ -1208,109 +1208,10 @@ def create_gradio_ui(env_factory):
                         history_display = gr.JSON(label="Action History (All Days)", visible=False)
                         episode_stats = gr.JSON(label="Metadata", visible=False)
 
-            with gr.Tab("🤖 Auto-Heuristic") as h_tab:
-                gr.Markdown("## 🤖 HEURISTIC AUTOMATION")
-                gr.Markdown("> This agent uses a hard-coded **Priority Triage System** to manage the farm.")
-                
-                with gr.Row():
-                    h_strategy_input = gr.Radio(
-                        choices=["Physics (FAO-56)", "Legacy (Thresholds)"],
-                        value="Physics (FAO-56)",
-                        label="Heuristic Strategy",
-                        info="Physics mode uses ETo/Kc math. Legacy uses 30% moisture thresholds."
-                    )
-                
-                with gr.Row():
-                    with gr.Column(scale=2):
-                        h_hud = gr.Markdown("Loading...", elem_classes=["section-box"])
-                        
-                        with gr.Row():
-                            h_plot_0 = gr.Markdown("Plot 0", elem_classes=["farm-plot"])
-                            h_plot_1 = gr.Markdown("Plot 1", elem_classes=["farm-plot"])
-                        with gr.Row():
-                            h_plot_2 = gr.Markdown("Plot 2", elem_classes=["farm-plot"])
-                            h_plot_3 = gr.Markdown("Plot 3", elem_classes=["farm-plot"])
-                        
-                        gr.Markdown("#### 📝 AGENT REASONING")
-                        h_reasoning = gr.Markdown("*Awaiting first step...*", elem_classes=["section-box"])
-                        
-                        gr.Markdown("#### 📈 MARKET PRICES")
-                        h_market = gr.Markdown("Loading...", elem_classes=["section-box"])
-                        
-                        gr.Markdown("#### 📡 HEURISTIC TELEMETRY")
-                        h_obs_viewer = gr.Textbox(label="Raw Input (ETo, Moisture, Economics)", lines=15, max_lines=15, interactive=False, elem_classes=["obs-viewer"])
-
-                    with gr.Column(scale=1):
-                        gr.Markdown("### 🤖 AGENT CONTROLS")
-                        with gr.Row():
-                            h_status = gr.Markdown("🟡 **IDLE**", elem_classes=["section-box"])
-                        
-                        h_step_btn = gr.Button("▶️ RUN ONE DAY", variant="primary")
-                        h_auto_toggle = gr.Checkbox(label="🔄 AUTO-PLAY", value=False)
-                        h_speed = gr.Slider(minimum=0.5, maximum=5.0, value=1.0, step=0.5, label="Delay (seconds)")
-                        
-                        h_reset = gr.Button("♻️ RESET ENVIRONMENT", variant="secondary")
-                
-                gr.HTML("<hr style='margin: 32px 0; border-color: rgba(255,255,255,0.08)'>")
-                h_history = gr.JSON(label="📝 Full Action History", visible=True)
-
-            with gr.Tab("🧠 Hybrid AI") as ai_tab:
-                gr.Markdown("## 🧠 HYBRID + LLM")
-                ai_auth_error = gr.Markdown(" ", visible=False, elem_classes=["auth-error-box"])
-                
-                # Load persistent token if exists
-                token_file = os.path.join(os.path.dirname(__file__), ".hf_token")
-                saved_token = ""
-                if os.path.exists(token_file):
-                    try:
-                        with open(token_file, "r") as f:
-                            saved_token = f.read().strip()
-                    except: pass
-
-                with gr.Row():
-                    with gr.Column(scale=2):
-                        ai_hud = gr.Markdown("Loading...", elem_classes=["section-box"])
-                        
-                        with gr.Row():
-                            ai_plot_0 = gr.Markdown("Plot 0", elem_classes=["farm-plot"])
-                            ai_plot_1 = gr.Markdown("Plot 1", elem_classes=["farm-plot"])
-                        with gr.Row():
-                            ai_plot_2 = gr.Markdown("Plot 2", elem_classes=["farm-plot"])
-                            ai_plot_3 = gr.Markdown("Plot 3", elem_classes=["farm-plot"])
-                        
-                        gr.Markdown("#### 💡 AI THOUGHT TRACE")
-                        ai_reasoning = gr.Markdown("*Awaiting inference...*", elem_classes=["section-box"])
-                        
-                        gr.Markdown("#### 📈 MARKET PRICES")
-                        ai_market = gr.Markdown("Loading...", elem_classes=["section-box"])
-
-                        gr.Markdown("#### 🕵️ AI AUDIT (Blind Test)")
-                        ai_audit_hud = gr.Markdown("*Waiting for inference...*", elem_classes=["section-box", "audit-box"])
-                        
-                        gr.Markdown("#### 🧠 LLM PERCEPTION")
-                        ai_obs_viewer = gr.Textbox(label="Raw Context (Observation Markdown)", lines=15, max_lines=15, interactive=False, elem_classes=["obs-viewer"])
-
-                    with gr.Column(scale=1):
-                        gr.Markdown("### 🧠 AI CONTROLS")
-                        with gr.Row():
-                            ai_status = gr.Markdown("🟡 **IDLE**", elem_classes=["section-box"])
-                        
-                        ai_step_btn = gr.Button("🧠 CONSULT AI", variant="primary")
-                        ai_auto_toggle = gr.Checkbox(label="🔄 AUTO-PLAY", value=False)
-                        
-                        with gr.Accordion("🔑 API Configuration", open=True):
-                            hf_token_input = gr.Textbox(
-                                label="HuggingFace Token (Optional Override)", 
-                                placeholder="hf_...", 
-                                type="password",
-                                value=saved_token
-                            )
-                            gr.Markdown("<small>Token is persisted locally.</small>")
-
-                        ai_reset = gr.Button("♻️ RESET ENVIRONMENT", variant="secondary")
-                
-                gr.HTML("<hr style='margin: 32px 0; border-color: rgba(255,255,255,0.08)'>")
-                ai_history = gr.JSON(label="📝 Full Action History", visible=True)
+            # ── AGENT TABS (REMOVED FOR HF STABILITY) ──────────────────────────
+            # The Auto-Heuristic and Hybrid AI tabs have been disabled to prevent
+            # reactive loops and connection timeouts on HuggingFace Spaces.
+            # Automated agents can still access the environment via the REST API.
 
             with gr.Tab("📖 Documentation") as doc_tab:
                 doc_html_content = gr.HTML(DOCS_HTML)
@@ -1318,13 +1219,11 @@ def create_gradio_ui(env_factory):
         # dashboard_vals (12): hud, plot×4, seeds, storage, market, action_feed, history(dict), json(str), metadata(dict)
         base_outputs = [hud_md] + plot_mds + [seeds_md, storage_md, market_md, action_feed, history_display, status_box, episode_stats]
 
-        # heuristic_vals (10): hud, plot×4, reasoning, status, market, history, txt_obs
-        h_outputs = [h_hud, h_plot_0, h_plot_1, h_plot_2, h_plot_3, h_reasoning, h_status, h_market, h_history, h_obs_viewer]
+        # ⚠️ Agent outputs disabled for stability on HuggingFace ⚠️
+        # h_outputs = [...]
+        # ai_outputs = [...]
 
-        # hybrid_vals (11): hud, plot×4, reasoning, status, market, history, audit, txt_obs
-        ai_outputs = [ai_hud, ai_plot_0, ai_plot_1, ai_plot_2, ai_plot_3, ai_reasoning, ai_status, ai_market, ai_history, ai_audit_hud, ai_obs_viewer]
-
-        all_outputs = base_outputs + h_outputs + ai_outputs
+        all_outputs = base_outputs 
 
         # Agent Instances
         h_agent = HeuristicAgent()
@@ -1386,9 +1285,6 @@ def create_gradio_ui(env_factory):
 
             return {
                 "dashboard": tuple(dashboard_vals),
-                "heuristic": tuple(heuristic_vals),
-                "hybrid": tuple(hybrid_vals),
-                "all": tuple(dashboard_vals + heuristic_vals + hybrid_vals)
             }
 
         def handle_reset(tid):
@@ -1419,12 +1315,8 @@ def create_gradio_ui(env_factory):
 
         # ── Event Handlers ────────────────────────────────────────────────────────
 
-        # On startup: hydrate everything once.
-        def do_initial_load():
-            initial_state = get_status()
-            return initial_state["all"]
-
-        ui.load(do_initial_load, outputs=all_outputs)
+        # On startup: only hydrate Dashboard.
+        ui.load(lambda: get_status()["dashboard"], outputs=base_outputs)
 
         # Dashboard action buttons — update only Dashboard outputs
         reset_btn.click(handle_reset, inputs=[task_id_input], outputs=base_outputs)
@@ -1440,48 +1332,7 @@ def create_gradio_ui(env_factory):
         pull_weeds_btn.click(lambda p, q, s: handle_action("pull_weeds", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
         sell_btn.click(lambda p, q, s: handle_action("sell", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
 
-        def run_heuristic_step(strategy):
-            env = env_factory()
-            obs = env.get_observation()
-            action = h_agent.act(obs, strategy=strategy)
-            env.step(action)
-            reasoning = getattr(h_agent, "last_reasoning", "Thinking...")
-            res = get_status(reasoning=reasoning, status="🟢 STEP COMPLETE")
-            return res["heuristic"]
-
-        def run_hybrid_step(token_override):
-            env = env_factory()
-            obs = env.get_observation()
-            
-            # Use override if provided, otherwise env var
-            token = token_override if token_override and token_override.strip() else os.getenv("HF_TOKEN")
-            
-            # Persist token if provided
-            if token_override and token_override.strip():
-                try:
-                    token_file = os.path.join(os.path.dirname(__file__), ".hf_token")
-                    with open(token_file, "w") as f:
-                        f.write(token_override.strip())
-                except: pass
-
-            try:
-                action = ai_agent.act(obs, token=token)
-                env.step(action)
-                reasoning = getattr(ai_agent, "last_reasoning", "Thinking...")
-                res = get_status(reasoning=reasoning, status="🧠 COGNITION COMPLETE")
-                return res["hybrid"]
-            except Exception as e:
-                err_msg = str(e)
-                status = "❌ AUTH ERROR" if "401" in err_msg else "❌ AI ERROR"
-                res = get_status(reasoning=f"ERROR: {err_msg}", status=status)
-                return res["hybrid"]
-
-        # Agent Handlers
-        h_step_btn.click(run_heuristic_step, inputs=[h_strategy_input], outputs=h_outputs)
-        h_reset.click(handle_reset, inputs=[task_id_input], outputs=h_outputs)
-        
-        ai_step_btn.click(run_hybrid_step, inputs=[hf_token_input], outputs=ai_outputs)
-        ai_reset.click(handle_reset, inputs=[task_id_input], outputs=ai_outputs)
+        # Agent logic removed from UI
 
         # Auto-Play Timers — DISABLED on HuggingFace for stability
         # h_timer = gr.Timer(1.0, active=False)
