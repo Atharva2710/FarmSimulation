@@ -26,6 +26,24 @@ except ImportError:
     from server.audit_utils import calculate_state_fidelity, calculate_tactical_report
 
 
+# ── Action Labor Costs (Phase 4) ─────────────────────────────────────────────
+
+ACTION_LABOR_COSTS = {
+    "buy_seeds": 1.0,
+    "plant": 2.0,
+    "irrigate": 1.0,
+    "harvest": 3.0,
+    "clear": 1.0,
+    "sell": 1.0,
+    "pump_water": 2.0,
+    "apply_fertilizer": 2.0,
+    "spray_pesticide": 2.0,
+    "pull_weeds": 1.0,
+    "wait": 1.0,
+    "end_day": 0.0,
+}
+
+
 # ── Helper functions ─────────────────────────────────────────────────────────
 
 
@@ -59,6 +77,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         self._step_count:     int              = 0
         self._max_days:       int              = 30
         self._done:           bool             = False
+        self._labor_hours:    float            = 10.0
 
         self._withered_count: int              = 0
         self._healthy_days:   int              = 0
@@ -159,6 +178,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         self._done           = False
         self._wasteful_actions = 0
         self._total_actions    = 0
+        self._labor_hours      = 10.0
 
         self._withered_count = 0
         self._healthy_days   = 0
@@ -191,7 +211,8 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         state_summary: Optional[Dict[str, Any]] = None,
     ) -> FarmObservation:
         """
-        Takes one action in the environment and advances the world by 1 day.
+        Takes one action in the environment using Labor Hours.
+        The world ONLY advances when action_type is "end_day".
         Returns the new observation.
         """
         if self._done:
@@ -199,170 +220,156 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             
         # Ensure action is a FarmAction object (Gradio passes dicts)
         if isinstance(action, dict):
-            # Extract metadata before conversion
             thought = thought or action.get("thought")
             state_summary = state_summary or action.get("state_summary")
             action = FarmAction(**action)
         else:
-            # Extract from Pydantic model
             thought = thought or getattr(action, "thought", None)
             state_summary = state_summary or getattr(action, "state_summary", None)
 
+        act = action.action_type
+        cost = ACTION_LABOR_COSTS.get(act, 1.0)
+        
+        # 1. Handle Special End Day Action
+        if act == "end_day":
+            self._step_count += 1
+            self._total_actions += 1
+            self._last_action = "end_day"
+            self._action_message = "🌙 Ending day... Crops are growing!"
+            
+            # Daily passive rewards/penalties before advancing
+            reward = self._daily_passive_reward()
+            
+            # Advance the world
+            self._advance_day()
+            
+            # Check for healthy streak
+            healthy_plots = sum(1 for p in self._plots if p.stage not in ("empty", "withered") and p.health >= 0.6)
+            if healthy_plots >= 2:
+                self._healthy_days += 1
+                
+            reward += self._post_advance_penalties()
+            self._labor_hours = 10.0  # Reset labor
+            
+            # Check done
+            done = self._day >= self._max_days or self._money <= 0.0
+            if done:
+                reward += self._handle_episode_termination()
+                
+            self._total_reward += reward
+            self._update_history(act, reward, thought, state_summary, done)
+            return self._build_observation(reward=round(reward, 4), done=done)
+
+        # 2. Check Labor Budget for standard actions
+        if self._labor_hours < cost:
+            self._action_message = f"🛑 OUT OF LABOR! ({self._labor_hours:.1f}h left, need {cost:.1f}h). Please 'End Day'."
+            return self._build_observation(reward=0.0, done=False)
+
+        # 3. Dispatch standard actions
         self._step_count += 1
         self._total_actions += 1
+        self._last_action = act
+        self._ticker_offset = (self._ticker_offset + 1) % 3
+        self._prev_money = self._money
         reward = 0.0
-
-        # validate action object exists
-        if action is None:
-            action = FarmAction(action_type="wait")
-
-        # dispatch to handler, each returns a float reward delta
-        act = action.action_type
-        self._last_action = act  # Track for dynamic farmer display
-        self._ticker_offset = (self._ticker_offset + 1) % 3  # Scroll ticker
-        self._prev_money = self._money  # Track money before action
 
         if act == "buy_seeds":
             reward_change = self._handle_buy_seeds(action)
             reward += reward_change
             qty = getattr(action, 'quantity', 0) or 0
             seed = getattr(action, 'seed_type', "") or ""
-            if reward_change < 0:
-                self._action_message = f"❌ Failed to buy seeds!"
-            else:
-                self._action_message = f"🛒 Bought {qty} {seed} seeds!"
+            self._action_message = f"🛒 Bought {qty} {seed} seeds!" if reward_change >= 0 else f"❌ Failed to buy seeds!"
         elif act == "plant":
             reward_change = self._handle_plant(action)
             reward += reward_change
             plot = getattr(action, 'plot_id', 0) or 0
             seed = getattr(action, 'seed_type', "") or ""
-            if reward_change < 0:
-                self._action_message = f"❌ Failed to plant Plot {plot}!"
-            else:
-                self._action_message = f"🧑‍🌾 Planted {seed} in Plot {plot}!"
+            self._action_message = f"🧑‍🌾 Planted {seed} in Plot {plot}!" if reward_change >= 0 else f"❌ Failed to plant Plot {plot}!"
         elif act == "irrigate":
             reward_change = self._handle_irrigate(action)
             reward += reward_change
             plot = getattr(action, 'plot_id', 0) or 0
-            if reward_change == -1.0:
-                self._action_message = f"❌ Failed to water Plot {plot}!"
-            else:
-                self._action_message = f"💧 Watered Plot {plot}!"
+            self._action_message = f"💧 Watered Plot {plot}!" if reward_change >= -0.5 else f"❌ Failed to water Plot {plot}!"
         elif act == "harvest":
             reward_change = self._handle_harvest(action)
             reward += reward_change
             plot = getattr(action, 'plot_id', 0) or 0
-            if reward_change < 0:
-                self._action_message = f"❌ Failed to harvest Plot {plot}!"
-            else:
-                self._action_message = f"🌾 Harvested Plot {plot}! 🎉"
+            self._action_message = f"🌾 Harvested Plot {plot}! 🎉" if reward_change >= 0 else f"❌ Failed to harvest Plot {plot}!"
         elif act == "clear":
             reward_change = self._handle_clear(action)
             reward += reward_change
             plot = getattr(action, 'plot_id', 0) or 0
-            if reward_change < 0:
-                self._action_message = f"❌ Failed to clear Plot {plot}!"
-            else:
-                self._action_message = f"🧹 Cleared Plot {plot}"
+            self._action_message = f"🧹 Cleared Plot {plot}" if reward_change >= 0 else f"❌ Failed to clear Plot {plot}!"
         elif act == "sell":
             reward_change = self._handle_sell(action)
             reward += reward_change
             qty = getattr(action, 'quantity', 0) or 0
             seed = getattr(action, 'seed_type', "") or ""
-            if reward_change < 0:
-                self._action_message = f"❌ Failed to sell {seed}!"
-            else:
-                self._action_message = f"💰 Sold {qty}kg of {seed}!"
+            self._action_message = f"💰 Sold {qty}kg of {seed}!" if reward_change >= 0 else f"❌ Failed to sell {seed}!"
         elif act == "pump_water":
             reward_change = self._handle_pump_water(action)
             reward += reward_change
-            if reward_change < 0:
-                self._action_message = f"❌ Failed to pump water!"
-            else:
-                self._action_message = f"⚙️ Pumped water from aquifer!"
+            self._action_message = f"⚙️ Pumped water from aquifer!" if reward_change >= 0 else f"❌ Failed to pump water!"
         elif act == "apply_fertilizer":
             reward_change = self._handle_apply_fertilizer(action)
             reward += reward_change
             plot = getattr(action, 'plot_id', 0) or 0
-            if reward_change == -1.0:
-                self._action_message = f"❌ Failed to fertilize Plot {plot}!"
-            else:
-                self._action_message = f"🌱 Fertilized Plot {plot}!" + (" (Wasteful)" if reward_change < 0 else "")
+            self._action_message = f"🌱 Fertilized Plot {plot}!" if reward_change >= -0.5 else f"❌ Failed to fertilize Plot {plot}!"
         elif act == "spray_pesticide":
             reward_change = self._handle_spray_pesticide(action)
             reward += reward_change
             plot = getattr(action, 'plot_id', 0) or 0
-            if reward_change == -1.0:
-                self._action_message = f"❌ Failed to spray Plot {plot}!"
-            else:
-                self._action_message = f"🦟 Sprayed pesticide on Plot {plot}!" + (" (Wasteful)" if reward_change < 0 else "")
+            self._action_message = f"🦟 Sprayed pesticide on Plot {plot}!" if reward_change >= -0.5 else f"❌ Failed to spray Plot {plot}!"
         elif act == "pull_weeds":
             reward_change = self._handle_pull_weeds(action)
             reward += reward_change
             plot = getattr(action, 'plot_id', 0) or 0
-            if reward_change == -1.0:
-                self._action_message = f"❌ Failed to pull weeds on Plot {plot}!"
-            else:
-                self._action_message = f"🤲 Pulled weeds on Plot {plot}!" + (" (Wasteful)" if reward_change < 0 else "")
+            self._action_message = f"🤲 Pulled weeds on Plot {plot}!" if reward_change >= -0.5 else f"🤲 Failed to weed Plot {plot}!"
         elif act == "wait":
             reward += self._handle_wait()
-            self._action_message = f"🧘‍♂️ Waiting... Time passes."
+            self._action_message = f"🧘‍♂️ Resting... ({cost}h)"
         else:
-            reward += -1.0   # unknown action penalty
+            reward += -1.0
             self._action_message = f"❓ Unknown action"
 
-        # daily passive rewards/penalties before advancing the day
-        reward += self._daily_passive_reward()
-
-        # advance the world by one day
-        self._advance_day()
-
-        # count healthy days (at least 2 plots active and healthy)
-        healthy_plots = sum(
-            1 for p in self._plots
-            if p.stage not in ("empty", "withered") and p.health >= 0.6
-        )
-        if healthy_plots >= 2:
-            self._healthy_days += 1
-
-        # post-advance penalties (spoilage already done inside _advance_day)
-        reward += self._post_advance_penalties()
-
-        # check done
-        done = self._day >= self._max_days or self._money <= 0.0
-
-        if done:
-            self._done = True  # Persist done state to prevent further steps
-            storage_value = sum(
-                self._storage[crop] * self._market_prices[crop].sell_price
-                for crop in self._storage
-            )
-            record = EpisodeRecord(
-                task_id=self.task_id,
-                initial_money=self._task_config()["money"],
-                final_money=self._money,
-                storage_value=storage_value,
-                total_reward=self._total_reward + reward,
-                days_elapsed=self._day,
-                max_days=self._max_days,
-                withered_count=self._withered_count,
-                drought_days=self._day if self._drought_active else 0,
-                healthy_days=self._healthy_days,
-                sell_events=self._sell_events,
-            )
-            self._last_grade = grade_episode(record)
-            if self._money > 0.0:
-                reward += self._terminal_bonus()
-
+        # Deduct labor and update state
+        self._labor_hours -= cost
         self._total_reward += reward
-        
-        # Track money change for dynamic display
         self._last_money_change = self._money - self._prev_money
         
-        # Add to action history with FULL STATE SNAPSHOT (keep last 30 days)
+        # Check for auto-termination (no money)
+        done = self._money <= 0.0
+        if done:
+            reward += self._handle_episode_termination()
+            self._total_reward += reward
+
+        self._update_history(act, reward, thought, state_summary, done)
+        return self._build_observation(reward=round(reward, 4), done=done)
+
+    def _handle_episode_termination(self) -> float:
+        self._done = True
+        storage_value = sum(self._storage[crop] * self._market_prices[crop].sell_price for crop in self._storage)
+        record = EpisodeRecord(
+            task_id=self.task_id,
+            initial_money=self._task_config()["money"],
+            final_money=self._money,
+            storage_value=storage_value,
+            total_reward=self._total_reward,
+            days_elapsed=self._day,
+            max_days=self._max_days,
+            withered_count=self._withered_count,
+            drought_days=self._day if self._drought_active else 0,
+            healthy_days=self._healthy_days,
+            sell_events=self._sell_events,
+        )
+        self._last_grade = grade_episode(record)
+        return self._terminal_bonus() if self._money > 0.0 else 0.0
+
+    def _update_history(self, act, reward, thought, state_summary, done):
         climate = self._current_climate()
         self._action_history.append({
             "day": self._day,
+            "labor_remaining": round(self._labor_hours, 1),
             "action": {
                 "type": act,
                 "details": self._action_message,
@@ -371,49 +378,14 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
                 "tactical": calculate_tactical_report(self._build_observation(reward=None, done=False)),
             },
             "reward": round(reward, 2),
-            "state_before": {
-                "money": round(self._prev_money, 2),
-                "water_tank": round(self._water_tank / WATER_TANK_CAPACITY, 2),
-            },
             "state_after": {
                 "money": round(self._money, 2),
-                "money_change": round(self._last_money_change, 2),
-                "water_tank": round(self._water_tank / WATER_TANK_CAPACITY, 2),
-                "water_level": round(self._water_tank, 1),
-                "seed_inventory": dict(self._seed_inventory),
-                "storage": {k: round(v, 1) for k, v in self._storage.items()},
-                "plots": [
-                    {
-                        "plot_id": p.plot_id,
-                        "stage": p.stage,
-                        "crop_type": p.crop_type if p.stage != "empty" else None,
-                        "days_planted": p.days_planted if p.stage != "empty" else 0,
-                        "health": round(p.health, 2) if p.stage != "empty" else None,
-                        "soil_moisture": round(p.soil_moisture, 2) if p.stage != "empty" else None,
-                    }
-                    for p in self._plots
-                ],
-                "climate": {
-                    "type": climate.climate_type,
-                    "temperature": climate.temperature,
-                    "humidity": round(climate.humidity, 2),
-                    "precipitation": climate.precipitation,
-                },
-                "market_prices": {
-                    seed: {
-                        "price": round(price.sell_price, 2),
-                        "trend": round(price.trend, 2)
-                    }
-                    for seed, price in self._market_prices.items()
-                }
-            },
-            "done": done,
+                "labor": round(self._labor_hours, 1),
+                "plots": [{"plot_id": p.plot_id, "stage": p.stage} for p in self._plots],
+            }
         })
         if len(self._action_history) > 30:
             self._action_history.pop(0)
-        
-        obs = self._build_observation(reward=round(reward, 4), done=done)
-        return obs
 
     def get_observation(self) -> FarmObservation:
         """Returns the current observation WITHOUT taking a step."""
@@ -1113,7 +1085,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
     # ── observation builder ──────────────────────────────────────────────
 
     def _build_valid_actions(self) -> List[str]:
-        actions = ["wait"]
+        actions = ["wait", "end_day"]
         if self._aquifer > 0 and self._water_tank < WATER_TANK_CAPACITY and self._money >= PUMP_COST:
             actions.append("pump_water")
         actions.append("buy_seeds(seed_type=wheat/rice/corn, quantity=N)")
@@ -1212,7 +1184,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         runway = (self._water_tank / total_etc) if total_etc > 0 else 99
         
         lines = [
-            f"### 🧪 Day {self._day} / {self._max_days}  {farmer}",
+            f"### 🧪 Day {self._day} / {self._max_days}  {farmer} | ⌛ Labor: `{self._labor_hours:.1f} / 10.0h`",
             f"💰 **Net Worth:** `${net_worth:.2f}` (Cash: `${self._money:.2f}` + Assets: `${total_storage_value + inventory_value:.2f}`)",
             f"{water_icon} **Water Tank:** `{water_pct:.1%}` ({self._water_tank:.1f}L / {WATER_TANK_CAPACITY:.0f}L) | **Runway:** `{runway:.1f} days`",
             f"🌊 **Aquifer:** `{self._aquifer:.1f}L` | **Ref ET (ETo):** `{eto:.3f}`",
@@ -1326,6 +1298,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             climate=self._current_climate(),
             market_prices=dict(self._market_prices),
             text_summary=self._build_text_summary(),
+            labor_remaining=round(self._labor_hours, 1),
             valid_actions=self._build_valid_actions(),
             reward=reward,
             done=done,
@@ -1346,4 +1319,5 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             total_reward=round(self._total_reward, 4),
             max_days=self._max_days,
             drought_active=self._drought_active,
+            labor_hours=self._labor_hours,
         )

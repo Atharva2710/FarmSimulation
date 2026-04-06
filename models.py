@@ -16,6 +16,7 @@ class ActionType(str, Enum):
     HARVEST   = "harvest"
     SELL      = "sell"
     WAIT      = "wait"
+    END_DAY   = "end_day"
     PUMP_WATER = "pump_water"
     APPLY_FERTILIZER = "apply_fertilizer"
     SPRAY_PESTICIDE  = "spray_pesticide"
@@ -113,7 +114,7 @@ PESTICIDE_COST:      float  = 1.5     # cost to run spray_pesticide
 # ── Action / Observation / State ─────────────────────────────────────────────
 
 class FarmAction(Action):
-    action_type:   str           = Field(..., description="buy_seeds/plant/irrigate/harvest/sell/wait/pump_water/apply_fertilizer/spray_pesticide/pull_weeds")
+    action_type:   str           = Field(..., description="buy_seeds/plant/irrigate/harvest/sell/wait/pump_water/apply_fertilizer/spray_pesticide/pull_weeds/end_day")
     plot_id:       Optional[int] = Field(None, ge=0, le=3, description="required for plot interactions")
     seed_type:     Optional[str] = Field(None, description="required for buy_seeds and plant")
     quantity:      Optional[int] = Field(None, gt=0, description="seeds to buy or kg to sell")
@@ -134,6 +135,7 @@ class FarmObservation(Observation):
     climate:        Optional[ClimateState] = Field(None)
     market_prices:  Dict[str, MarketPrice] = Field(default_factory=dict, description="keyed by seed name")
     text_summary:   str                    = Field("", description="human-readable state for LLM")
+    labor_remaining: float                 = Field(10.0, ge=0.0, le=10.0, description="hours left in current day")
     valid_actions:  List[str]              = Field(default_factory=list, description="action hints for agent")
 
 
@@ -143,6 +145,7 @@ class FarmState(State):
     total_reward:   float = Field(0.0,   description="cumulative reward this episode")
     max_days:       int   = Field(30,    description="episode ends at this day")
     drought_active: bool  = Field(False, description="task 3 drought event flag")
+    labor_hours:    float = Field(10.0, ge=0.0, le=10.0, description="current day labor budget")
 
 
 # ── Checkpoint ───────────────────────────────────────────────────────────────

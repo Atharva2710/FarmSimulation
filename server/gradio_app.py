@@ -1166,6 +1166,7 @@ def create_gradio_ui(env_factory):
                             wait_btn = gr.Button("⏰ WAIT", elem_classes=["action-btn"])
                         with gr.Row():
                             pump_btn = gr.Button("⚙️ PUMP", elem_classes=["action-btn"])
+                            end_day_btn = gr.Button("🧺 END DAY", variant="secondary")
                         
                         gr.HTML("<hr style='margin: 24px 0; border-color: rgba(255,255,255,0.08)'>")
                         gr.Markdown("#### 🌱 PLOT OPERATIONS")
@@ -1300,7 +1301,7 @@ def create_gradio_ui(env_factory):
         def handle_action(action_type, p_id, qty, s_type):
             env = env_factory()
             action = {"action_type": action_type}
-            if action_type in ["plant", "irrigate", "harvest", "clear", "apply_fertilizer", "spray_pesticide", "pull_weeds"]:
+            if action_type in ["plant", "irrigate", "harvest", "clear", "apply_fertilizer", "spray_pesticide", "pull_weeds", "end_day"]:
                 action["plot_id"] = int(p_id)
             if action_type in ["buy_seeds", "sell"]:
                 action["seed_type"] = s_type
@@ -1323,6 +1324,7 @@ def create_gradio_ui(env_factory):
         wait_btn.click(lambda p, q, s: handle_action("wait", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
         buy_btn.click(lambda p, q, s: handle_action("buy_seeds", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
         pump_btn.click(lambda p, q, s: handle_action("pump_water", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
+        end_day_btn.click(lambda p, q, s: handle_action("end_day", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
         plant_btn.click(lambda p, q, s: handle_action("plant", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
         irrigate_btn.click(lambda p, q, s: handle_action("irrigate", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
         harvest_btn.click(lambda p, q, s: handle_action("harvest", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
