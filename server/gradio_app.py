@@ -1330,9 +1330,14 @@ def create_gradio_ui(env_factory):
 
         # Output states matching in update function
         # We need to update Dashboard, Heuristic Tab, and Hybrid Tab
+        # episode_stats receives a JSON string (not raw dict) to avoid HF serialization reactive loops
         base_outputs = [hud_md] + plot_mds + [seeds_md, storage_md, market_md, action_feed, history_display, status_box, episode_stats]
         h_outputs = [h_hud, h_plot_0, h_plot_1, h_plot_2, h_plot_3, h_reasoning, h_status, h_market, h_history, h_obs_viewer]
-        ai_outputs = [ai_hud, ai_plot_0, ai_plot_1, ai_plot_2, ai_plot_3, ai_reasoning, ai_status, ai_market, ai_history, ai_audit_hud, ai_auth_error, ai_obs_viewer]
+        # auth_state carries (text, visible) as a plain tuple via gr.State.
+        # The actual ai_auth_error Markdown is driven by auth_state.change() below —
+        # this avoids putting gr.update() inside timer tick returns (causes reactive loops on HF).
+        auth_state = gr.State((" ", False))
+        ai_outputs = [ai_hud, ai_plot_0, ai_plot_1, ai_plot_2, ai_plot_3, ai_reasoning, ai_status, ai_market, ai_history, ai_audit_hud, auth_state, ai_obs_viewer]
         all_outputs = base_outputs + h_outputs + ai_outputs
 
         # Agent Instances
@@ -1378,20 +1383,23 @@ def create_gradio_ui(env_factory):
                         *Audit compares AI's thinking vs hidden environment state.*
                     """).strip()
 
-            # Auth Error Logic (Shifted to Banner)
-            err_banner = gr.update(visible=False, value="")
+            # Auth Error Logic — use plain strings/bools, NOT gr.update() objects.
+            # gr.update() inside a timer tick output causes Svelte reactive loops on HuggingFace.
+            auth_error_visible = False
+            auth_error_text = " "
             if reasoning and "AUTH ERROR (401)" in reasoning:
-                err_banner = gr.update(
-                    visible=True, 
-                    value=f"### ❌ AUTHENTICATION ERROR (401)\n\n**Please check your HuggingFace Token in the Control Panel.**\n\n*The Hybrid Agent is currently falling back to its internal Heuristic logic.*"
-                )
+                auth_error_visible = True
+                auth_error_text = "### ❌ AUTHENTICATION ERROR (401)\n\n**Please check your HuggingFace Token in the Control Panel.**\n\n*The Hybrid Agent is currently falling back to its internal Heuristic logic.*"
                 reasoning = "*LLM Access Restricted*"
 
-            # Group the return values logically
-            dashboard_vals = [out_hud] + out_plots + [out_seeds, out_storage, out_market, out_msg, out_history, out_json, metadata]
+            # Group the return values logically.
+            # IMPORTANT: All values must be plain Python types (str, dict, bool, list).
+            # Never put gr.update() objects here — they cause effect_update_depth_exceeded on HF.
+            dashboard_vals = [out_hud] + out_plots + [out_seeds, out_storage, out_market, out_msg, out_history, out_json, json.dumps(metadata, default=str)]
             heuristic_vals = [out_hud] + out_plots + [reasoning, status, out_market, out_history, obs.text_summary]
-            hybrid_vals    = [out_hud] + out_plots + [reasoning, status, out_market, out_history, ai_audit_msg, err_banner, obs.text_summary]
-            
+            auth_state_val = (auth_error_text, auth_error_visible)
+            hybrid_vals    = [out_hud] + out_plots + [reasoning, status, out_market, out_history, ai_audit_msg, auth_state_val, obs.text_summary]
+
             return {
                 "dashboard": tuple(dashboard_vals),
                 "heuristic": tuple(heuristic_vals),
@@ -1465,12 +1473,23 @@ def create_gradio_ui(env_factory):
                 print(f"[AGENT] CRITICAL ERROR: {error_trace}")
                 return get_status(reasoning=f"❌ ERROR: {str(e)}", status="🔴 CRASHED")
 
-        # Event Handlers
-        # Fix 1: Only load Dashboard outputs on startup — not all 30+ outputs.
-        # Loading all_outputs on ui.load blocks the WebSocket queue and freezes tab switching.
+        # ── Event Handlers ────────────────────────────────────────────────────────
+
+        # Wire auth_state → ai_auth_error Markdown.
+        # Using a state.change() chain keeps gr.update() OUT of timer tick returns,
+        # which is the primary cause of effect_update_depth_exceeded on HuggingFace.
+        auth_state.change(
+            lambda s: gr.update(value=s[0], visible=s[1]),
+            inputs=[auth_state],
+            outputs=[ai_auth_error]
+        )
+
+        # On startup: only hydrate Dashboard (12 outputs). Agent tabs hydrate on first
+        # button press. tab.select() is intentionally NOT used — on HuggingFace it
+        # conflicts with gr.Timer ticks and causes select→update→select reactive loops.
         ui.load(lambda: get_status()["dashboard"], outputs=base_outputs)
 
-        # Fix 5: Agent tabs now populate on initial load — preventing recursive selective loops.
+        # Dashboard action buttons — update only Dashboard outputs
         reset_btn.click(handle_reset, inputs=[task_id_input], outputs=base_outputs)
         wait_btn.click(lambda p, q, s: handle_action("wait", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
         buy_btn.click(lambda p, q, s: handle_action("buy_seeds", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
@@ -1483,35 +1502,29 @@ def create_gradio_ui(env_factory):
         spray_btn.click(lambda p, q, s: handle_action("spray_pesticide", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
         pull_weeds_btn.click(lambda p, q, s: handle_action("pull_weeds", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
         sell_btn.click(lambda p, q, s: handle_action("sell", p, q, s)["dashboard"], inputs=[plot_selector, quantity, seed_type], outputs=base_outputs)
-        
-        # Agent Controls
+
+        # Agent Controls — update only their own tab's outputs
         h_step_btn.click(lambda s: handle_agent_step("heuristic", h_strategy=s)["heuristic"], inputs=[h_strategy_input], outputs=h_outputs)
         ai_step_btn.click(lambda t, s: handle_agent_step("ai", token=t, h_strategy=s)["hybrid"], inputs=[hf_token_input, h_strategy_input], outputs=ai_outputs)
-        # Fix 2b: h_reset and ai_reset should only update their own tab's outputs
         h_reset.click(lambda t: handle_reset_heuristic(t), inputs=[task_id_input], outputs=h_outputs)
         ai_reset.click(lambda t: handle_reset_hybrid(t), inputs=[task_id_input], outputs=ai_outputs)
 
-        # Lazy-load agent tabs only when they are first selected.
-        # This prevents all 30+ outputs being updated simultaneously on startup,
-        # which is what triggers Svelte's effect_update_depth_exceeded infinite loop.
-        h_tab.select(lambda: get_status()["heuristic"], outputs=h_outputs)
-        ai_tab.select(lambda: get_status()["hybrid"], outputs=ai_outputs)
-
-        # Timer Logic for Auto-Play (Gradio 4)
+        # Auto-Play Timers — active=False by default, toggled by checkbox.
+        # Timer definitions must be OUTSIDE any Tab context to avoid Svelte scoping issues.
         h_timer = gr.Timer(1.0, active=False)
         h_timer.tick(lambda s: handle_agent_step("heuristic", h_strategy=s)["heuristic"], inputs=[h_strategy_input], outputs=h_outputs)
-        
-        ai_timer = gr.Timer(2.0, active=False) # AI is slower
+
+        ai_timer = gr.Timer(3.0, active=False)  # 3s for AI (LLM is slow)
         ai_timer.tick(lambda tok, s: handle_agent_step("ai", tok, h_strategy=s)["hybrid"], inputs=[hf_token_input, h_strategy_input], outputs=ai_outputs)
-        
-        # Fix 4: Use gr.update(active=x) instead of creating a new gr.Timer instance.
-        # Creating a new gr.Timer() on every toggle leaks timers and floods the server.
+
+        # gr.update(active=x) updates the existing timer — does NOT create a new one.
+        # Never do gr.Timer(active=x) in a .change() — it leaks timers on every toggle.
         h_auto_toggle.change(lambda x: gr.update(active=x), inputs=[h_auto_toggle], outputs=[h_timer])
         ai_auto_toggle.change(lambda x: gr.update(active=x), inputs=[ai_auto_toggle], outputs=[ai_timer])
 
-        # Fix 3: Use gr.State to track visibility — status_box.visible is a build-time
-        # attribute, not a live runtime value, so `not status_box.visible` always returns
-        # the same thing and the toggle breaks (and can crash the queue).
+        # Visibility toggles for debug panel and history — use gr.State to track runtime
+        # visibility. Component.visible is a build-time constant on HuggingFace and
+        # evaluating `not component.visible` always returns the same value, breaking toggle.
         debug_visible = gr.State(False)
         history_visible = gr.State(False)
 
