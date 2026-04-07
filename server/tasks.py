@@ -122,12 +122,15 @@ def grade_task3(record: EpisodeRecord) -> float:
     return round(score, 4)
 
 def grade_episode(record: EpisodeRecord) -> float:
-    """Route to the correct grader by task_id. Returns float in [0.0, 1.0]."""
+    """Route to the correct grader by task_id. Returns float strictly in (0.0, 1.0)."""
     if record.task_id == 1:
-        return grade_task1(record)
+        score = grade_task1(record)
     elif record.task_id == 2:
-        return grade_task2(record)
+        score = grade_task2(record)
     elif record.task_id == 3:
-        return grade_task3(record)
+        score = grade_task3(record)
     else:
         raise ValueError(f"Unknown task_id: {record.task_id}")
+    
+    # Strictly clamp to (0, 1) to pass Phase 2 validation
+    return round(max(0.01, min(0.99, score)), 4)
