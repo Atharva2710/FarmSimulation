@@ -1247,8 +1247,8 @@ def create_gradio_ui(env_factory):
                 
                 gr.Markdown("---")
                 st_results = gr.Dataframe(
-                    headers=["ID", "Scenario", "Dif", "Expected", "Actual", "Status", "Duration (s)"],
-                    datatype=["number", "str", "number", "str", "str", "str", "number"],
+                    headers=["ID", "Scenario", "Dif", "Expected", "Actual", "Status", "Logic/Error", "Duration (s)"],
+                    datatype=["number", "str", "number", "str", "str", "str", "str", "number"],
                     label="Execution Trace",
                     interactive=False
                 )
@@ -1402,7 +1402,7 @@ def create_gradio_ui(env_factory):
                     df_data.append([
                         r["id"], r["name"], r["difficulty"], 
                         ", ".join(r["expected"]), r["actual"], 
-                        r["status"], r["duration"]
+                        r["status"], r["thought"], r["duration"]
                     ])
                     yield gr.update(), f"### Status: `EVALUATING` (Scenario {r['id']}...)", df_data
                     await asyncio.sleep(0.1)

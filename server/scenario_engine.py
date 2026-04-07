@@ -5,7 +5,7 @@ import time
 import traceback
 from typing import Dict, Any, List, Optional
 from server.scenario_definitions import SCENARIOS, Scenario
-from agents import HeuristicAgent, HybridAgent
+from server.agents import HeuristicAgent, HybridAgent
 from models import FarmObservation
 
 class ScenarioEngine:
