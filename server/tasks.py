@@ -35,11 +35,11 @@ def grade_task1(record: EpisodeRecord) -> float:
 
     net_worth = record.final_money + record.storage_value
     ratio     = net_worth / (record.initial_money * 2.0)
-    score     = min(1.0, max(0.0, ratio))
+    score     = min(0.99, max(0.01, ratio))
 
     # small penalty for any withered crops (shouldn't happen on easy mode)
     wither_penalty = min(0.2, record.withered_count * 0.05)
-    score          = max(0.0, score - wither_penalty)
+    score          = max(0.01, score - wither_penalty)
 
     return round(max(0.01, min(0.99, score)), 4)
 
@@ -54,7 +54,7 @@ def grade_task2(record: EpisodeRecord) -> float:
     # profit component
     net_worth     = record.final_money + record.storage_value
     profit_ratio  = net_worth / (record.initial_money * 2.5)
-    profit_score  = min(1.0, max(0.0, profit_ratio))
+    profit_score  = min(0.99, max(0.01, profit_ratio))
 
     # timing component — what fraction of sell revenue came from above-base prices
     if not record.sell_events:
@@ -78,7 +78,7 @@ def grade_task2(record: EpisodeRecord) -> float:
     wither_penalty = min(0.3, record.withered_count * 0.1)
 
     score = (0.6 * profit_score) + (0.4 * timing_score)
-    score = max(0.0, score - wither_penalty)
+    score = max(0.01, score - wither_penalty)
     return round(max(0.01, min(0.99, score)), 4)
 
 def grade_task3(record: EpisodeRecord) -> float:
@@ -92,7 +92,7 @@ def grade_task3(record: EpisodeRecord) -> float:
     # profit component — target is 3× starting money (hard to achieve with drought)
     net_worth    = record.final_money + record.storage_value
     profit_ratio = net_worth / (record.initial_money * 3.0)
-    profit_score = min(1.0, max(0.0, profit_ratio))
+    profit_score = min(0.99, max(0.01, profit_ratio))
 
     # survival component — did the agent survive the full episode without bankruptcy?
     if record.final_money > 0 and record.days_elapsed >= record.max_days:
@@ -118,7 +118,7 @@ def grade_task3(record: EpisodeRecord) -> float:
       + 0.3 * survival_score
       + 0.2 * resilience_score
     )
-    score = max(0.0, score - wither_penalty)
+    score = max(0.01, score - wither_penalty)
     return round(max(0.01, min(0.99, score)), 4)
 
 def grade_episode(record: EpisodeRecord) -> float:
