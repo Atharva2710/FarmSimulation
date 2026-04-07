@@ -272,7 +272,8 @@ def run_episode(
             break
 
     # ── Collect final grade from episode metadata ─────────────────────────
-    grade       = float(obs.get("metadata", {}).get("grade", 0.0))
+    grade       = float(obs.get("metadata", {}).get("grade", 0.01))
+    grade       = max(0.01, min(0.99, grade))
     final_money = float(obs.get("money", 0.0))
     success     = grade >= 0.5
 
@@ -306,7 +307,8 @@ def run_task(
     results = [run_episode(env, llm, task_id, ep) for ep in range(1, EPISODES_PER_TASK + 1)]
 
     grades = [r["grade"] for r in results]
-    avg    = sum(grades) / len(grades)
+    avg = sum(grades) / len(grades) if grades else 0.01
+    avg = max(0.01, min(0.99, avg))
 
     diag(f"\n  Task {task_id} avg grade: {avg:.4f}")
     return {
