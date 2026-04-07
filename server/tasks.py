@@ -31,7 +31,7 @@ def grade_task1(record: EpisodeRecord) -> float:
     Perfect score = double your starting money.
     """
     if record.initial_money <= 0:
-        return 0.0
+        return 0.01
 
     net_worth = record.final_money + record.storage_value
     ratio     = net_worth / (record.initial_money * 2.0)
@@ -49,7 +49,7 @@ def grade_task2(record: EpisodeRecord) -> float:
     Score = 0.6 × profit_score + 0.4 × timing_score
     """
     if record.initial_money <= 0:
-        return 0.0
+        return 0.01
 
     # profit component
     net_worth     = record.final_money + record.storage_value
@@ -58,7 +58,7 @@ def grade_task2(record: EpisodeRecord) -> float:
 
     # timing component — what fraction of sell revenue came from above-base prices
     if not record.sell_events:
-        timing_score = 0.0
+        timing_score = 0.01
     else:
         good_revenue  = 0.0
         total_revenue = 0.0
@@ -70,9 +70,9 @@ def grade_task2(record: EpisodeRecord) -> float:
                 good_revenue += revenue - base_revenue   # only the premium
 
         if total_revenue > 0:
-            timing_score = min(1.0, good_revenue / (total_revenue * 0.3))
+            timing_score = min(0.99, good_revenue / (total_revenue * 0.3))
         else:
-            timing_score = 0.0
+            timing_score = 0.01
 
     # wither penalty is harsher on medium
     wither_penalty = min(0.3, record.withered_count * 0.1)
@@ -87,7 +87,7 @@ def grade_task3(record: EpisodeRecord) -> float:
     Score = 0.5 × profit_score + 0.3 × survival_score + 0.2 × resilience_score
     """
     if record.initial_money <= 0:
-        return 0.0
+        return 0.01
 
     # profit component — target is 3× starting money (hard to achieve with drought)
     net_worth    = record.final_money + record.storage_value
@@ -96,19 +96,19 @@ def grade_task3(record: EpisodeRecord) -> float:
 
     # survival component — did the agent survive the full episode without bankruptcy?
     if record.final_money > 0 and record.days_elapsed >= record.max_days:
-        survival_score = 1.0
+        survival_score = 0.99
     elif record.final_money > 0:
         # survived but episode ended early (shouldn't happen unless bug)
         survival_score = record.days_elapsed / record.max_days
     else:
         # went bankrupt
-        survival_score = 0.0
+        survival_score = 0.01
 
     # resilience component — fraction of days where at least 2 plots stayed healthy
     if record.max_days > 0:
-        resilience_score = min(1.0, record.healthy_days / record.max_days)
+        resilience_score = min(0.99, record.healthy_days / record.max_days)
     else:
-        resilience_score = 0.0
+        resilience_score = 0.01
 
     # wither penalty is harshest on hard mode
     wither_penalty = min(0.4, record.withered_count * 0.15)
