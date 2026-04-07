@@ -95,6 +95,8 @@ class HeuristicAgent:
             etc = eto * kc
             
             # Maintenance Trigger: If current moisture < (1 - p + buffer)
+            if not p.crop_type or p.crop_type not in SEED_CONFIG:
+                continue
             p_const = SEED_CONFIG[p.crop_type].get("p", 0.5)
             raw_limit = (1.0 - p_const)
             if p.soil_moisture < raw_limit + 0.02:
