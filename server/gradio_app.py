@@ -3,7 +3,7 @@ import os
 import json
 import asyncio
 import time
-from agents import HeuristicAgent, HybridAgent
+from server.agents import HeuristicAgent, HybridAgent
 from server.scenario_engine import ScenarioEngine
 from server.scenario_definitions import SCENARIOS
 
@@ -1256,15 +1256,16 @@ def create_gradio_ui(env_factory):
             with gr.Tab("📖 Documentation") as doc_tab:
                 doc_html_content = gr.HTML(DOCS_HTML)
 
+        # Session-specific state tracking for HuggingFace stability
+        session_reasoning = gr.State("System initialized.")
+        session_status = gr.State("🟢 READY")
+
         # dashboard_vals (14): hud, plot×4, seeds, storage, market, action_feed, history(dict), json(str), metadata(dict), reasoning(state), status(state)
         base_outputs = [hud_md] + plot_mds + [seeds_md, storage_md, market_md, action_feed, history_display, status_box, episode_stats, session_reasoning, session_status]
 
         all_outputs = base_outputs 
 
         # Agent Instances
-        # Session-specific state tracking for HuggingFace stability
-        session_reasoning = gr.State("System initialized.")
-        session_status = gr.State("🟢 READY")
 
         async def get_status(reasoning=None, status=None, current_reasoning=None, current_status=None):
             """Return a single snapshot of all dashboard outputs.
