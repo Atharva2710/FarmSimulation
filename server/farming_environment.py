@@ -100,16 +100,22 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         self._action_message:    str           = ""   # Last action feedback
         self._last_harvest_amount: float       = 0.0  # For celebration
         self._prev_money:        float         = 0.0  # Previous money amount
-        
+
         # Action history for UI display
         self._action_history:    List[Dict[str, Any]] = []
-        
+
         # Track waste for efficiency grading
         self._wasteful_actions: int            = 0
         self._total_actions:    int            = 0
 
         # Auto-initialize so the env works even without explicit reset()
         self.reset()
+
+    @property
+    def _clean_action_message(self) -> str:
+        """Return _action_message with all non-ASCII (emoji) characters stripped."""
+        import re
+        return re.sub(r'[^\x00-\x7F]+', '', self._action_message).strip()
 
     # ── config helpers ───────────────────────────────────────────────────
 
@@ -393,7 +399,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             "labor_remaining": round(self._labor_hours, 1),
             "action": {
                 "type": act,
-                "details": self._action_message,
+                "details": self._clean_action_message,
                 "thought": thought,
                 "fidelity": calculate_state_fidelity(state_summary, self._build_observation(reward=None, done=False)) if state_summary else None,
                 "tactical": calculate_tactical_report(self._build_observation(reward=None, done=False)),
@@ -1144,176 +1150,148 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
 
         return actions
 
+    def _build_weather_forecast(self) -> list:
+        """
+        Generate a 7-day climate forecast based on the deterministic rotation cycle.
+
+        Since climate follows a fixed rotation (temperate → arid → tropical every 10 days),
+        we can predict future conditions exactly. Confidence decays 10% per day to
+        reflect real-world forecasting uncertainty.
+
+        Returns a list of dicts, one per future day, suitable for inclusion in
+        the FarmObservation.weather_forecast field.
+        """
+        forecast = []
+        for offset in range(1, 8):
+            future_day = self._day + offset
+            idx = (future_day // CLIMATE_ROTATION_DAYS) % len(CLIMATE_ROTATION)
+            climate_name = CLIMATE_ROTATION[idx]
+            cfg = CLIMATE_CONFIG[climate_name]
+            confidence = round(max(0.3, 1.0 - offset * 0.1), 2)
+
+            # Determine if an arid stretch is starting (drought-risk signal)
+            is_dry = climate_name == "arid" or (climate_name == "tropical" and cfg["moisture_decay"] < 0.04)
+
+            forecast.append({
+                "day": future_day,
+                "climate": climate_name,
+                "temp_approx": cfg["temp"],
+                "moisture_decay": cfg["moisture_decay"],
+                "is_dry": is_dry,
+                "confidence": confidence,
+            })
+        return forecast
+
     def _build_text_summary(self) -> str:
-        """Build a clean, high-readability summary for the Dashboard."""
+        """Build a plain-text state summary for the agent. No emojis, no HTML, no markdown."""
         climate = self._current_climate()
         water_pct = self._water_tank / WATER_TANK_CAPACITY
-        
-        # Dynamic farmer pose
-        farmer_poses = {
-            "idle": "👨‍🌾",
-            "wait": "🧘‍♂️",
-            "pump_water": "⚙️",
-            "buy_seeds": "🛒",
-            "plant": "🧑‍🌾",
-            "irrigate": "💧",
-            "harvest": "🌾",
-            "sell": "💰",
-            "clear": "🧹",
-            "apply_fertilizer": "🧪",
-            "spray_pesticide": "🦟",
-            "pull_weeds": "🤲",
-        }
-        farmer = farmer_poses.get(self._last_action, "👨‍🌾")
-        
-        # Dynamic money display with trend
-        money_trend = ""
-        if self._last_money_change > 50:
-            money_trend = " 🎉"  # Big profit!
-        elif self._last_money_change > 0:
-            money_trend = " ↗️"
-        elif self._last_money_change < -50:
-            money_trend = " ⚠️"  # Big loss!
-        elif self._last_money_change < 0:
-            money_trend = " ↘️"
-        
-        if self._money < 50:
-            money_trend += " 🚨"  # Low funds warning
 
-        # Dynamic water tank with icons
-        water_icon = "💧🌊" if water_pct > 0.8 else "💧" if water_pct > 0.3 else "🏜️"
-
-        # Weather indicators based on dynamic values
-        weather_icon = "☀️"
-        weather_desc = "Clear"
-        if climate.precipitation > 8.0:
-            weather_icon = "⛈️"
-            weather_desc = "Stormy"
-        elif climate.precipitation > 2.0:
-            weather_icon = "🌧️"
-            weather_desc = "Rainy"
-        elif climate.humidity > 0.8:
-            weather_icon = "☁️"
-            weather_desc = "Cloudy"
-        
-        if self._drought_active:
-            weather_icon = "🔥"
-            weather_desc = "DROUGHT"
-
-        # FAO-56 Physics & Economics
+        # FAO-56 reference evapotranspiration
         eto = (climate.temperature / 100.0) * (1.1 - climate.humidity)
-        
-        # Calculate Economics
+
+        # Economics
         total_storage_value = sum(qty * self._market_prices[c].sell_price for c, qty in self._storage.items())
         inventory_value = sum(qty * SEED_CONFIG[c]['base_buy'] for c, qty in self._seed_inventory.items())
         net_worth = self._money + total_storage_value + inventory_value
-        
-        # Calculate Water Runway (Days)
-        total_etc = sum((eto * SEED_CONFIG[p.crop_type if p.crop_type else 'wheat']['Kc']) for p in self._plots if p.stage not in ['empty', 'withered'])
+
+        # Water runway in days
+        total_etc = sum(
+            eto * SEED_CONFIG[p.crop_type if p.crop_type else 'wheat']['Kc']
+            for p in self._plots if p.stage not in ['empty', 'withered']
+        )
         runway = (self._water_tank / total_etc) if total_etc > 0 else 99
-        
+
         lines = [
-            f"### 🧪 Day {self._day} / {self._max_days}  {farmer} | ⌛ **{self._labor_hours:.1f}h remaining**",
-            f"💰 **Net Worth:** `${net_worth:.2f}` (Cash: `${self._money:.2f}` + Assets: `${total_storage_value + inventory_value:.2f}`){money_trend}",
-            f"{water_icon} **Water Tank:** `{water_pct:.1%}` ({self._water_tank:.1f}L / {WATER_TANK_CAPACITY:.0f}L) | **Runway:** `{runway:.1f} days`",
-            f"🌊 **Aquifer:** `{self._aquifer:.1f}L` | **Ref ET (ETo):** `{eto:.3f}`",
-            f"{weather_icon} **Climate:** {climate.climate_type.upper()} ({climate.temperature:.1f}°C, {climate.humidity:.0%} Hum)",
-            "",
-            "#### 📊 ENVIRONMENTAL RISK ASSESSMENT",
-            f"- **Hydric Stress:** {'🔴 CRITICAL' if runway < 2 else '🟡 MODERATE' if runway < 5 else '🟢 LOW'}",
-            f"- **Evaporative Demand:** {'🔥 HIGH' if eto > 0.1 else '🌤️ MODERATE' if eto > 0.05 else '☁️ LOW'}",
-            f"- **Pest Pressure:** {'⚠️ ESCALATING' if any(p.has_pests for p in self._plots) else '✅ CLEAR'}",
+            f"DAY {self._day} / {self._max_days} | LABOR REMAINING: {self._labor_hours:.1f}h",
+            f"CASH: ${self._money:.2f} | NET WORTH: ${net_worth:.2f} (storage: ${total_storage_value:.2f}, seeds: ${inventory_value:.2f})",
+            f"WATER TANK: {water_pct:.1%} ({self._water_tank:.1f}L / {WATER_TANK_CAPACITY:.0f}L) | WATER RUNWAY: {runway:.1f} days",
+            f"AQUIFER: {self._aquifer:.1f}L | ETo: {eto:.3f}",
+            f"CLIMATE: {climate.climate_type.upper()} | TEMP: {climate.temperature:.1f}C | HUMIDITY: {climate.humidity:.0%} | PRECIP: {climate.precipitation:.1f}mm",
         ]
-        
-        # Add action feedback message
+
+        # Risk flags
+        if self._money < 50:
+            lines.append("WARNING: LOW FUNDS (under $50)")
+        if runway < 2:
+            lines.append("WARNING: WATER CRITICAL (less than 2 days remaining)")
+        elif runway < 5:
+            lines.append("NOTICE: WATER LOW (less than 5 days remaining)")
+        if self._drought_active:
+            lines.append("WARNING: DROUGHT ACTIVE")
+        if any(p.has_pests for p in self._plots):
+            lines.append("WARNING: PEST INFESTATION DETECTED ON AT LEAST ONE PLOT")
+
+        # Last action feedback (stripped of emojis)
         if self._action_message:
-            lines.append(f"**💬 {self._action_message}**")
-        
-        lines.extend([
-            "<hr>",
-            "#### 🚜 PLOT STATUS",
-        ])
-        
+            import re
+            clean_msg = re.sub(r'[^\x00-\x7F]+', '', self._action_message).strip()
+            if clean_msg:
+                lines.append(f"LAST ACTION: {clean_msg}")
+
+        # Plot status
+        lines.append("")
+        lines.append("PLOTS:")
         for plot in self._plots:
             if plot.stage == "empty":
-                # Show prepared soil if recently cleared
-                plot_icon = "🟫" if self._last_action == "clear" else "⬜"
-                lines.append(f"  * **Plot {plot.plot_id}:** {plot_icon} empty")
+                lines.append(f"  Plot {plot.plot_id}: empty")
             else:
                 seed_cfg = SEED_CONFIG[plot.crop_type]
                 grow_days = int(seed_cfg["grow_days"])
-                
-                # Dynamic plot animations
-                if plot.stage == "mature":
-                    status = "**READY TO HARVEST** ✨"
-                elif plot.stage == "withered":
-                    status = "**WITHERED** 💀"
-                else:
-                    status = f"Growth: {plot.days_planted}/{grow_days} days"
-                        
+                etc = eto * seed_cfg.get("Kc", 1.0)
+                p_limit = 1.0 - seed_cfg.get("p", 0.5)
                 warnings = []
                 if plot.has_weeds:
-                    warnings.append("🌿 Weeds!")
+                    warnings.append("WEEDS")
                 if plot.has_pests:
-                    warnings.append(f"🐛 Pests! (Sev: {plot.pest_severity:.1f})")
-                warnings_str = " | ".join(warnings)
-                if warnings_str:
-                    warnings_str = " | " + warnings_str
-                
-                crop_cfg = SEED_CONFIG[plot.crop_type]
-                kc = crop_cfg.get("Kc", 1.0)
-                p_const = crop_cfg.get("p", 0.5)
-                etc = eto * kc
-                p_limit = 1.0 - seed_cfg.get("p", 0.5)
-
+                    warnings.append(f"PESTS (severity {plot.pest_severity:.2f})")
+                warn_str = f" | ALERTS: {', '.join(warnings)}" if warnings else ""
+                status = "READY TO HARVEST" if plot.stage == "mature" else ("WITHERED" if plot.stage == "withered" else f"growing ({plot.days_planted}/{grow_days} days)")
                 lines.append(
-                    f"  * **Plot {plot.plot_id}:** {plot.crop_type.upper()} | {status} | 💧 **Moisture:** `{plot.soil_moisture:.1%}` (RAW Limit: `{p_limit:.1%}`) | ❤️ {plot.health:.1%} | **ETc Demand:** `{etc:.3f}`"
+                    f"  Plot {plot.plot_id}: {plot.crop_type.upper()} | {status}"
+                    f" | moisture {plot.soil_moisture:.1%} (critical below {p_limit:.1%})"
+                    f" | health {plot.health:.1%} | ETc demand {etc:.3f}{warn_str}"
                 )
-        
-        lines.append("<hr>")
-        
-        # Market mood indicator
+
+        # Market
+        lines.append("")
+        lines.append("MARKET PRICES:")
         avg_trend = sum(p.trend for p in self._market_prices.values()) / len(self._market_prices)
-        if avg_trend > 0.1:
-            market_mood = "📈🐂 Bull Market!"
-        elif avg_trend < -0.1:
-            market_mood = "📉🐻 Bear Market"
-        else:
-            market_mood = "📊➡️ Stable"
-        
-        # 📈 MARKET INTELLIGENCE (ROI & BASE PRICING)
-        market_rows = []
+        mood = "rising" if avg_trend > 0.1 else ("falling" if avg_trend < -0.1 else "stable")
+        lines.append(f"  Overall trend: {mood}")
         for s, p in self._market_prices.items():
             cfg = SEED_CONFIG[s]
             premium = ((p.sell_price / cfg['base_sell']) - 1) * 100
-            trend_icon = '↑' if p.trend > 0.1 else '↓' if p.trend < -0.1 else '-'
-            
-            # 7d Avg display
+            trend_str = "up" if p.trend > 0.1 else ("down" if p.trend < -0.1 else "flat")
             history = self._price_history.get(s, [])
             avg_7d = sum(history) / len(history) if history else p.sell_price
-            market_rows.append(f"  * **{s.upper()}**: Current ${p.sell_price:.2f} (7d Avg: ${avg_7d:.2f}) | {premium:+.0f}% Prem | Trend: {trend_icon}")
-        
-        lines.append("\n#### 📈 MARKET INTELLIGENCE\n" + "\n".join(market_rows) + f"\n\n**Mood:** {market_mood}")
-        
-        # Resources & Storage
-        lines.append("<hr>")
-        inv = " | ".join(f"**{s}**: {q}" for s, q in self._seed_inventory.items())
-        lines.append(f"🎒 **SEEDS:** {inv}")
-        
-        store = " | ".join(f"**{s}**: {q:.1f}kg" for s, q in self._storage.items())
-        lines.append(f"🌾 **STORAGE:** {store}")
-        
-        if self._drought_active:
-            lines.append("\nWARNING: DROUGHT ACTIVE")
-            
-        # 🧪 LABOR GUIDE (for Strategic Reasoning)
-        guide = []
-        for act, cost in ACTION_LABOR_COSTS.items():
-            if act != "end_day":
-                guide.append(f"{act}: {cost}h")
-        lines.append("\n#### LABOR GUIDE\n" + " | ".join(guide))
+            lines.append(
+                f"  {s}: sell ${p.sell_price:.2f} (7d avg ${avg_7d:.2f}, {premium:+.0f}% vs base) | trend {trend_str}"
+            )
 
-        return "\n\n".join(lines)
+        # Inventory and storage
+        lines.append("")
+        lines.append("SEEDS IN HAND: " + ", ".join(f"{s}: {q}" for s, q in self._seed_inventory.items()))
+        lines.append("STORAGE: " + ", ".join(f"{s}: {q:.1f}kg" for s, q in self._storage.items()))
+
+        # 7-day forecast
+        forecast = self._build_weather_forecast()
+        if forecast:
+            lines.append("")
+            lines.append("7-DAY FORECAST:")
+            for fc in forecast:
+                dry_note = " [DRY - irrigate proactively]" if fc["is_dry"] else ""
+                lines.append(
+                    f"  Day {fc['day']}: {fc['climate']} (~{fc['temp_approx']:.0f}C,"
+                    f" moisture decay {fc['moisture_decay']:.2f}/day,"
+                    f" confidence {fc['confidence']:.0%}){dry_note}"
+                )
+
+        # Labor costs reference
+        lines.append("")
+        lines.append("LABOR COSTS: " + " | ".join(f"{act}: {cost}h" for act, cost in ACTION_LABOR_COSTS.items() if act != "end_day"))
+
+        return "\n".join(lines)
 
     def _build_observation(
         self,
@@ -1332,13 +1310,14 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             text_summary=self._build_text_summary(),
             labor_remaining=round(self._labor_hours, 2),
             valid_actions=self._build_valid_actions(),
+            weather_forecast=self._build_weather_forecast(),
             reward=reward,
             done=done,
         )
         # Clamp grade strictly to (0.01, 0.99) — never 0.0 or 1.0 to pass Phase 2 validation.
         obs.metadata["grade"]          = max(0.01, min(0.99, self._last_grade))
         obs.metadata["withered_count"] = self._withered_count
-        obs.metadata["action_message"] = self._action_message
+        obs.metadata["action_message"] = self._clean_action_message
         return obs
 
     # ── state property ───────────────────────────────────────────────────
