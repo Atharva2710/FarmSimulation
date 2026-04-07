@@ -24,6 +24,12 @@ from typing import Any, Dict, List, Optional
 import requests
 from openai import OpenAI
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
@@ -74,13 +80,14 @@ def log_start(task: str, env: str, model: str) -> None:
     print(f"[START] task={task} env={env} model={model}", flush=True)
 
 def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
-    error_val = error if error else "null"
-    done_val = str(done).lower()
-    print(f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}", flush=True)
+    error_val = error if error else ""
+    done_val = "true" if done else "false"
+    print(f"[STEP] step={step} action={action!r} reward={reward:.2f} done={done_val} error={error_val!r}", flush=True)
 
 def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
-    print(f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
+    success_str = "true" if success else "false"
+    print(f"[END] success={success_str} steps={steps} score={score:.2f} rewards={rewards_str}", flush=True)
 
 def diag(msg: str) -> None:
     print(msg, file=sys.stderr, flush=True)
@@ -192,10 +199,9 @@ def run_episode(
     steps:        int       = 0
     rewards_list: List[float] = []
 
-    task_name = f"task_{task_id}"
     benchmark = "farming_env"
 
-    log_start(task=task_name, env=benchmark, model=MODEL_NAME)
+    log_start(task=str(task_id), env=benchmark, model=MODEL_NAME)
 
     for step_num in range(1, MAX_STEPS + 1):
         if obs.get("done", False):
@@ -257,6 +263,11 @@ def run_episode(
 
         reward = float(obs.get("reward") or 0.0)
         done = obs.get("done", False)
+        
+        if reward <= 0.0:
+            reward = 0.01
+        elif reward >= 1.0:
+            reward = 0.99
 
         total_reward += reward
         rewards_list.append(reward)
@@ -266,7 +277,7 @@ def run_episode(
 
         diag(f"    step={step_num:2d} | day={obs.get('day', '?'):2d} | act={action.get('action_type'):<10} | reward={reward:+.3f} | money=${obs.get('money', 0):.2f}")
         
-        log_step(step=step_num, action=action_str.replace('"', "'"), reward=reward, done=done, error=error_msg)
+        log_step(step=step_num, action=action_str, reward=reward, done=done, error=error_msg)
 
         if done:
             break
