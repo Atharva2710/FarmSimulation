@@ -1182,8 +1182,8 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             })
         return forecast
 
-    def _build_text_summary(self) -> str:
-        """Build a plain-text state summary for the agent. No emojis, no HTML, no markdown."""
+    def _build_text_summary(self, last_reward: Optional[float] = None) -> str:
+        """Build an optimized plain-text state summary for the agent."""
         climate = self._current_climate()
         water_pct = self._water_tank / WATER_TANK_CAPACITY
 
@@ -1222,12 +1222,16 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         if any(p.has_pests for p in self._plots):
             lines.append("WARNING: PEST INFESTATION DETECTED ON AT LEAST ONE PLOT")
 
-        # Last action feedback (stripped of emojis)
+        # Last action feedback with sentiment and reward
         if self._action_message:
             import re
             clean_msg = re.sub(r'[^\x00-\x7F]+', '', self._action_message).strip()
             if clean_msg:
-                lines.append(f"LAST ACTION: {clean_msg}")
+                sentiment = ""
+                if last_reward is not None:
+                    status = "OK" if last_reward >= 0 else "FAIL"
+                    sentiment = f" [{status} | reward: {last_reward:+.2f}]"
+                lines.append(f"LAST ACTION: {clean_msg}{sentiment}")
 
         # Plot status
         lines.append("")
@@ -1240,13 +1244,27 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
                 grow_days = int(seed_cfg["grow_days"])
                 etc = eto * seed_cfg.get("Kc", 1.0)
                 p_limit = 1.0 - seed_cfg.get("p", 0.5)
+                
+                # Item 3: Days to harvest / wither
+                if plot.stage == "mature":
+                    days_overdue = plot.days_planted - grow_days
+                    days_to_wither = max(0, HARVEST_WINDOW_DAYS - days_overdue)
+                    status = f"READY TO HARVEST (withers in {days_to_wither} days)"
+                elif plot.stage == "withered":
+                    status = "WITHERED"
+                else:
+                    days_to_harvest = max(0, grow_days - plot.days_planted)
+                    status = f"growing ({plot.days_planted}/{grow_days} days | harvest in {days_to_harvest} days)"
+                
                 warnings = []
                 if plot.has_weeds:
                     warnings.append("WEEDS")
                 if plot.has_pests:
                     warnings.append(f"PESTS (severity {plot.pest_severity:.2f})")
+                if plot.health < 0.2:
+                    warnings.append("CRITICAL HEALTH")
                 warn_str = f" | ALERTS: {', '.join(warnings)}" if warnings else ""
-                status = "READY TO HARVEST" if plot.stage == "mature" else ("WITHERED" if plot.stage == "withered" else f"growing ({plot.days_planted}/{grow_days} days)")
+                
                 lines.append(
                     f"  Plot {plot.plot_id}: {plot.crop_type.upper()} | {status}"
                     f" | moisture {plot.soil_moisture:.1%} (critical below {p_limit:.1%})"
@@ -1263,24 +1281,37 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             cfg = SEED_CONFIG[s]
             premium = ((p.sell_price / cfg['base_sell']) - 1) * 100
             trend_str = "up" if p.trend > 0.1 else ("down" if p.trend < -0.1 else "flat")
+            
+            # Item 4: Sell signal
+            signal = "[SELL]" if premium > 10 else "[HOLD]"
+            
             history = self._price_history.get(s, [])
             avg_7d = sum(history) / len(history) if history else p.sell_price
             lines.append(
-                f"  {s}: sell ${p.sell_price:.2f} (7d avg ${avg_7d:.2f}, {premium:+.0f}% vs base) | trend {trend_str}"
+                f"  {s}: sell ${p.sell_price:.2f} {signal} (7d avg ${avg_7d:.2f}, {premium:+.0f}% vs base) | trend {trend_str}"
             )
 
-        # Inventory and storage
+        # Item 5: Filter zero quantities
+        seeds_in_hand = [f"{s}: {q}" for s, q in self._seed_inventory.items() if q > 0]
+        storage_items = [f"{s}: {q:.1f}kg" for s, q in self._storage.items() if q > 0]
+        
         lines.append("")
-        lines.append("SEEDS IN HAND: " + ", ".join(f"{s}: {q}" for s, q in self._seed_inventory.items()))
-        lines.append("STORAGE: " + ", ".join(f"{s}: {q:.1f}kg" for s, q in self._storage.items()))
+        lines.append("SEEDS IN HAND: " + (", ".join(seeds_in_hand) if seeds_in_hand else "none"))
+        lines.append("STORAGE: " + (", ".join(storage_items) if storage_items else "empty"))
 
         # 7-day forecast
         forecast = self._build_weather_forecast()
         if forecast:
             lines.append("")
             lines.append("7-DAY FORECAST:")
+            
+            # Item 7: Flag nearest arid window
+            arid_start = next((fc["day"] for fc in forecast if fc["is_dry"]), None)
+            if arid_start:
+                lines.append(f"  ALERT: Next arid stretch starts around Day {arid_start}. Prepare water reserves.")
+            
             for fc in forecast:
-                dry_note = " [DRY - irrigate proactively]" if fc["is_dry"] else ""
+                dry_note = " [DRY]" if fc["is_dry"] else ""
                 lines.append(
                     f"  Day {fc['day']}: {fc['climate']} (~{fc['temp_approx']:.0f}C,"
                     f" moisture decay {fc['moisture_decay']:.2f}/day,"
@@ -1307,7 +1338,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             plots=list(self._plots),
             climate=self._current_climate(),
             market_prices=dict(self._market_prices),
-            text_summary=self._build_text_summary(),
+            text_summary=self._build_text_summary(last_reward=reward),
             labor_remaining=round(self._labor_hours, 2),
             valid_actions=self._build_valid_actions(),
             weather_forecast=self._build_weather_forecast(),
