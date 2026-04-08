@@ -21,6 +21,7 @@ class ActionType(str, Enum):
     APPLY_FERTILIZER = "apply_fertilizer"
     SPRAY_PESTICIDE  = "spray_pesticide"
     PULL_WEEDS       = "pull_weeds"
+    BUY_PLOT         = "buy_plot"
 
 
 class SeedType(str, Enum):
@@ -46,7 +47,7 @@ class ClimateType(str, Enum):
 # ── Sub-models ───────────────────────────────────────────────────────────────
 
 class PlotState(BaseModel):
-    plot_id:        int            = Field(..., description="0-indexed, 0 to 3")
+    plot_id:        int            = Field(..., description="0-indexed plot identifier")
     crop_type:      Optional[str]  = Field(None, description="wheat/rice/corn or None")
     stage:          str            = Field("empty", description="empty/seedling/growing/mature/withered")
     days_planted:   int            = Field(0, ge=0)
@@ -109,13 +110,14 @@ PUMP_CAPACITY:       float  = 50.0    # max pumped per action
 PUMP_COST:           float  = 5.0     # money cost to run the pump once
 FERTILIZER_COST:     float  = 10.0    # cost to run apply_fertilizer
 PESTICIDE_COST:      float  = 1.5     # cost to run spray_pesticide
+PLOT_BASE_COST:       float  = 100.0   # cost to purchase a new plot
 
 
 # ── Action / Observation / State ─────────────────────────────────────────────
 
 class FarmAction(Action):
-    action_type:   str           = Field(..., description="buy_seeds/plant/irrigate/harvest/sell/wait/pump_water/apply_fertilizer/spray_pesticide/pull_weeds/end_day")
-    plot_id:       Optional[int] = Field(None, ge=0, le=3, description="required for plot interactions")
+    action_type:   str           = Field(..., description="buy_seeds/plant/irrigate/harvest/sell/wait/pump_water/apply_fertilizer/spray_pesticide/pull_weeds/buy_plot/end_day")
+    plot_id:       Optional[int] = Field(None, ge=0, le=99, description="required for plot interactions")
     seed_type:     Optional[str] = Field(None, description="required for buy_seeds and plant")
     quantity:      Optional[int] = Field(None, gt=0, description="seeds to buy or kg to sell")
     

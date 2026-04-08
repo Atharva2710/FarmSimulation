@@ -57,7 +57,7 @@ class HeuristicAgent:
                 
         if critical_plots:
             driest = min(critical_plots, key=lambda p: p.soil_moisture)
-            if tank >= 15.0:
+            if tank >= 0.15:
                 return {"action_type": "irrigate", "plot_id": driest.plot_id}, f"CRITICAL PHYSICS ALERT (Plot {driest.plot_id}): Moisture {driest.soil_moisture*100:.0f}% is below stress limit for {driest.crop_type.upper()}. RAW depletion exceeded."
             elif money >= PUMP_COST and getattr(obs, 'aquifer', 1.0) > 0:
                 return {"action_type": "pump_water"}, "Emergency Physics-Fix: Pumping water to prevent stress-induced yield loss."
@@ -104,7 +104,7 @@ class HeuristicAgent:
                 
         if thirsty_plots:
             target, etc_val, _ = min(thirsty_plots, key=lambda x: x[0].soil_moisture)
-            if tank >= 15.0:
+            if tank >= 0.15:
                 return {"action_type": "irrigate", "plot_id": target.plot_id}, f"Physics-Informed Irrigation (Plot {target.plot_id}): Demand ETc={etc_val:.3f}. Current depletion approaching limit p={SEED_CONFIG[target.crop_type]['p']}."
             elif money >= PUMP_COST and getattr(obs, 'aquifer', 1.0) > 0:
                 return {"action_type": "pump_water"}, "Resource Optimization: Recharging tank for physics-driven demand."
@@ -122,7 +122,19 @@ class HeuristicAgent:
             if money >= PUMP_COST + 30:
                 return {"action_type": "pump_water"}, f"Safety Recharge: High ET demand ({eto:.2f}) detected."
 
+        # Weather Safety Check: Don't expand if soil is saturated or heavy rain predicted
+        precip = getattr(obs.climate, "precipitation", 0)
+        high_moisture = any(p.soil_moisture > 0.9 for p in plots)
+        if (precip > 10.0 or high_moisture) and not any(p.stage == "mature" for p in plots):
+            # Only wait if we aren't bypassing to harvest
+            return {"action_type": "wait"}, f"Weather Safety: Postponing expansion (Precip: {precip:.1f}mm, High Saturation: {high_moisture})."
+
         empty_plots = [p for p in plots if p.stage == "empty"]
+        
+        # Strategic Land Acquisition: Buy if cash is surplus (>$150) and no plots are empty
+        if money > 150.0 and not empty_plots:
+            return {"action_type": "buy_plot"}, "Expansion: Scaling operations due to surplus capital (>$150)."
+
         if empty_plots:
             target_seed = "wheat"
             if money > 80.0: target_seed = "corn"
@@ -163,7 +175,7 @@ class HeuristicAgent:
         thirsty = [p for p in plots if p.stage not in ["empty", "withered"] and p.soil_moisture < 0.3]
         if thirsty:
             target = min(thirsty, key=lambda p: p.soil_moisture)
-            if tank >= 15.0:
+            if tank >= 0.15:
                 return {"action_type": "irrigate", "plot_id": target.plot_id}, f"Legacy Priority: Plot {target.plot_id} below 30% moisture."
             elif money >= PUMP_COST:
                 return {"action_type": "pump_water"}, "Legacy Pumping: Low tank for thirsty crops."
@@ -186,7 +198,16 @@ class HeuristicAgent:
                 return {"action_type": "pull_weeds", "plot_id": p.plot_id}, "Legacy Hazard: Pulling weeds."
 
         # Priority 5: Expand
+        # Weather Safety
+        if getattr(obs.climate, "precipitation", 0) > 10.0:
+            return {"action_type": "wait"}, "Legacy Weather Safety: Heavy rain detected."
+
         empty_plots = [p for p in plots if p.stage == "empty"]
+        
+        # Legacy Expansion: Buy land if surplus capital
+        if money > 150.0 and not empty_plots:
+            return {"action_type": "buy_plot"}, "Legacy Expansion: Scaling farm size."
+
         if empty_plots:
             seed = "wheat"
             if money > 150: seed = "corn"

@@ -1191,7 +1191,9 @@ def create_gradio_ui(env_factory):
                             spray_btn = gr.Button("🦟 SPRAY", variant="primary")
                             pull_weeds_btn = gr.Button("🤲 WEED", variant="primary")
                         
-                        clear_btn = gr.Button("🧹 CLEAR DEAD", variant="secondary")
+                        with gr.Row():
+                            clear_btn = gr.Button("🧹 CLEAR DEAD", variant="secondary")
+                            buy_plot_btn = gr.Button("🚜 BUY PLOT (~$100)", variant="secondary")
 
                         gr.Markdown("---")
                         gr.Markdown("#### 📦 RESOURCES")
@@ -1238,10 +1240,13 @@ def create_gradio_ui(env_factory):
                         )
                         st_seed = gr.Number(label="Random Seed (Consistency)", value=42, precision=0)
                         st_agent = gr.Radio(["Heuristic", "Hybrid"], label="Target Agent", value="Heuristic")
+                        st_h_mode = gr.Dropdown(choices=["physics", "legacy"], label="Heuristic Strategy", value="physics")
+                        st_use_heuristic = gr.Checkbox(label="Enable Heuristic Fallback/Advisory", value=False)
                         st_diff = gr.Slider(0, 3, value=0, step=1, label="Difficulty Filter (0=All)")
                         st_run_btn = gr.Button("🔥 START STRESS TEST", variant="primary")
                     
                     with gr.Column(scale=2):
+                        st_error_banner = gr.HTML(visible=False)
                         st_gauge = gr.HTML(value="<div style='text-align:center; padding: 20px; background: #1a1a1a; border-radius: 15px; border: 1px solid #333;'><h3 style='color: #888;'>Intelligence Pass Rate</h3><h1 style='font-size:5em; margin: 10px 0; color: #4caf50;'>--%</h1><p style='color: #666;'>Select configuration and click START</p></div>")
                         st_progress_md = gr.Markdown("### Status: `IDLE`")
                 
@@ -1308,6 +1313,8 @@ def create_gradio_ui(env_factory):
             action = {"action_type": action_type}
             if action_type in ["plant", "irrigate", "harvest", "clear", "apply_fertilizer", "spray_pesticide", "pull_weeds", "end_day"]:
                 action["plot_id"] = int(p_id)
+            if action_type == "buy_plot":
+                pass # Environment handles ID assignment
             if action_type in ["buy_seeds", "sell"]:
                 action["seed_type"] = s_type
                 action["quantity"] = int(qty)
@@ -1353,6 +1360,8 @@ def create_gradio_ui(env_factory):
             return await handle_action("pull_weeds", p, q, s, r, st)
         async def do_sell(p, q, s, r, st):
             return await handle_action("sell", p, q, s, r, st)
+        async def do_buy_plot(p, q, s, r, st):
+            return await handle_action("buy_plot", p, q, s, r, st)
 
         action_inputs = [plot_selector, quantity, seed_type, session_reasoning, session_status]
         
@@ -1368,9 +1377,10 @@ def create_gradio_ui(env_factory):
         spray_btn.click(do_spray, inputs=action_inputs, outputs=base_outputs)
         pull_weeds_btn.click(do_pull_weeds, inputs=action_inputs, outputs=base_outputs)
         sell_btn.click(do_sell, inputs=action_inputs, outputs=base_outputs)
+        buy_plot_btn.click(do_buy_plot, inputs=action_inputs, outputs=base_outputs)
         # ── Stress Test Logic ───────────────────────────────────────────
         
-        async def run_stress_test(token, model, seed, agent_type, diff):
+        async def run_stress_test(token, model, seed, agent_type, h_mode, use_heuristic, diff):
             # Instantiate Agent
             agent = HybridAgent() if agent_type == "Hybrid" else HeuristicAgent()
             engine = ScenarioEngine(agent)
@@ -1379,9 +1389,10 @@ def create_gradio_ui(env_factory):
             d_val = int(diff) if diff > 0 else None
             
             # Execute
-            report_gen = engine.run_tests_stream(difficulty=d_val, seed=int(seed), hf_token=token, model_name=model)
+            report_gen = engine.run_tests_stream(difficulty=d_val, seed=int(seed), hf_token=token, model_name=model, use_heuristic=use_heuristic, h_mode=h_mode)
             
             df_data = []
+            first_error = None
             async for result in report_gen:
                 if "summary" in result:
                     summary = result["summary"]
@@ -1395,22 +1406,33 @@ def create_gradio_ui(env_factory):
                     </div>
                     """
                     progress = f"### Status: `COMPLETE` ({summary['total']} scenarios evaluated)"
-                    yield gauge_html, progress, df_data
+                    
+                    error_html = gr.update(visible=False)
+                    if first_error:
+                        error_html = gr.update(
+                            value=f"<div style='background: #fee2e2; border: 1px solid #ef4444; color: #b91c1c; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-weight: bold;'>⚠️ {first_error}</div>",
+                            visible=True
+                        )
+                    yield error_html, gauge_html, progress, df_data
                 else:
                     # Individual scenario result
                     r = result
+                    if not first_error and r["thought"].startswith("❌"):
+                        first_error = r["thought"]
+                        
                     df_data.append([
                         r["id"], r["name"], r["difficulty"], 
                         ", ".join(r["expected"]), r["actual"], 
                         r["status"], r["thought"], r["duration"]
                     ])
-                    yield gr.update(), f"### Status: `EVALUATING` (Scenario {r['id']}...)", df_data
+                    # Clear error banner on first step of evaluation if needed
+                    yield gr.update(visible=False), gr.update(), f"### Status: `EVALUATING` (Scenario {r['id']}...)", df_data
                     await asyncio.sleep(0.1)
 
         st_run_btn.click(
             run_stress_test, 
-            inputs=[st_token, st_model, st_seed, st_agent, st_diff], 
-            outputs=[st_gauge, st_progress_md, st_results]
+            inputs=[st_token, st_model, st_seed, st_agent, st_h_mode, st_use_heuristic, st_diff], 
+            outputs=[st_error_banner, st_gauge, st_progress_md, st_results]
         )
 
         # Agent logic removed from UI
