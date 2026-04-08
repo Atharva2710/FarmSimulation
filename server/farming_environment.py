@@ -14,7 +14,7 @@ from models import (
     HARVEST_WINDOW_DAYS, IRRIGATION_COST, SEED_CONFIG,
     STORAGE_CAPACITY, WATER_TANK_CAPACITY, WATER_TANK_INITIAL,
     AQUIFER_CAPACITY, AQUIFER_INITIAL, PUMP_CAPACITY, PUMP_COST,
-    FERTILIZER_COST, PESTICIDE_COST,
+    FERTILIZER_COST, PESTICIDE_COST, PLOT_BASE_COST,
     ClimateState, FarmAction, FarmObservation, FarmState, PlotState,
     MarketPrice,
 )
@@ -39,6 +39,7 @@ ACTION_LABOR_COSTS = {
     "apply_fertilizer": 1.0,
     "spray_pesticide": 1.0,
     "pull_weeds": 1.5,
+    "buy_plot": 2.0,
     "wait": 1.0,
     "end_day": 0.0,
 }
@@ -352,6 +353,10 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             reward += reward_change
             plot = getattr(action, 'plot_id', 0) or 0
             self._action_message = f"🤲 Pulled weeds on Plot {plot}!" if reward_change >= -0.5 else f"🤲 Failed to weed Plot {plot}!"
+        elif act == "buy_plot":
+            reward_change = self._handle_buy_plot(action)
+            reward += reward_change
+            self._action_message = f"🚜 Bought new plot {len(self._plots)-1}!" if reward_change >= 0 else f"❌ Failed to buy plot!"
         elif act == "wait":
             cost = ACTION_LABOR_COSTS.get("wait", 1.0)
             reward += self._handle_wait()
@@ -469,7 +474,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         return 0.0   # neutral — reward comes when seeds are used well
 
     def _handle_plant(self, action: FarmAction) -> float:
-        if action.plot_id is None or not (0 <= action.plot_id <= 3):
+        if action.plot_id is None or not (0 <= action.plot_id < len(self._plots)):
             return -1.0
         if action.seed_type is None or action.seed_type not in SEED_CONFIG:
             return -1.0
@@ -501,20 +506,8 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         return 0.2   # small positive: agent committed to a plan
 
     def _handle_irrigate(self, action: FarmAction) -> float:
-        """
-        Applies water to a specific plot to counter evapotranspiration (ETc).
-        
-        Logic:
-        - Consumes IRRIGATION_COST (15L) from the water tank.
-        - Increases soil_moisture by +0.20 (20%).
-        - Ref: FAO-56 Chapter 6 (Crop Water Requirements).
-        
-        Rewards:
-        - +0.5: Rescue bonus if moisture was critically low (<0.25).
-        - +0.1: Maintenance bonus for proactive hydration.
-        - -0.5: Wasteful penalty if moisture > 0.8 (simulating over-saturation risk).
-        """
-        if action.plot_id is None or not (0 <= action.plot_id <= 3):
+        # ... logic ...
+        if action.plot_id is None or not (0 <= action.plot_id < len(self._plots)):
             return -1.0
 
         plot = self._plots[action.plot_id]
@@ -527,8 +520,8 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
 
         # Add water to plot (capped at 1.0 for physical realism)
         old_moisture = plot.soil_moisture
-        plot.soil_moisture = min(1.0, plot.soil_moisture + 0.2)
-        self._water_tank -= IRRIGATION_COST
+        plot.soil_moisture = round(min(1.0, plot.soil_moisture + 0.2), 4)
+        self._water_tank = round(max(0.0, self._water_tank - IRRIGATION_COST), 2)
 
         # wasteful irrigation penalty: penalize if it was watered AFTER being > 80% saturated
         if old_moisture > 0.8:
@@ -543,7 +536,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         return 0.1
 
     def _handle_harvest(self, action: FarmAction) -> float:
-        if action.plot_id is None or not (0 <= action.plot_id <= 3):
+        if action.plot_id is None or not (0 <= action.plot_id < len(self._plots)):
             return -1.0
 
         plot = self._plots[action.plot_id]
@@ -563,7 +556,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         lost_kg       = yield_kg - stored_kg
 
         if stored_kg > 0:
-            self._storage[crop] = self._storage.get(crop, 0.0) + stored_kg
+            self._storage[crop] = round(self._storage.get(crop, 0.0) + stored_kg, 2)
 
         # reset plot to empty
         plot.stage          = "empty"
@@ -587,7 +580,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
 
     def _handle_clear(self, action: FarmAction) -> float:
         """Clears a withered plot so it can be used again."""
-        if action.plot_id is None or not (0 <= action.plot_id <= 3):
+        if action.plot_id is None or not (0 <= action.plot_id < len(self._plots)):
             return -1.0
 
         plot = self._plots[action.plot_id]
@@ -646,13 +639,13 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         execution_price = mid_price * (1.0 - slippage_pct)
         revenue = execution_price * qty
 
-        self._storage[crop] -= qty
-        self._money         += revenue
+        self._storage[crop] = round(max(0.0, self._storage[crop] - qty), 2)
+        self._money         = round(self._money + revenue, 2)
 
         # 2. Permanent Market Impact (Almgren-Chriss inspired)
         # 1% permanent impact per 10kg, max 50% cumulative drop
         price_drop = min(0.5, (qty / 10.0) * 0.01)
-        self._market_impact[crop] *= (1.0 - price_drop)
+        self._market_impact[crop] = round(self._market_impact[crop] * (1.0 - price_drop), 4)
         self._market_impact[crop] = max(0.5, self._market_impact[crop])
 
         # reward scales with revenue relative to base price
@@ -685,15 +678,15 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             self._money -= cost
             return -0.2
             
-        self._money -= cost
+        self._money = round(self._money - cost, 2)
         # REDUCED from +0.4 to +0.3 for more strategic fertilizer management
-        plot.nitrogen = min(1.0, plot.nitrogen + 0.3)
-        plot.phosphorus = min(1.0, plot.phosphorus + 0.3)
-        plot.potassium = min(1.0, plot.potassium + 0.3)
+        plot.nitrogen = round(min(1.0, plot.nitrogen + 0.3), 4)
+        plot.phosphorus = round(min(1.0, plot.phosphorus + 0.3), 4)
+        plot.potassium = round(min(1.0, plot.potassium + 0.3), 4)
         return 0.1
 
     def _handle_spray_pesticide(self, action: FarmAction) -> float:
-        if action.plot_id is None or not (0 <= action.plot_id <= 3):
+        if action.plot_id is None or not (0 <= action.plot_id < len(self._plots)):
             return -1.0
         cfg_task = self._task_config()
         cost = PESTICIDE_COST * cfg_task["input_mult"]
@@ -714,7 +707,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         return 0.2
 
     def _handle_pull_weeds(self, action: FarmAction) -> float:
-        if action.plot_id is None or not (0 <= action.plot_id <= 3):
+        if action.plot_id is None or not (0 <= action.plot_id < len(self._plots)):
             return -1.0
             
         plot = self._plots[action.plot_id]
@@ -744,10 +737,28 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         space_in_tank = WATER_TANK_CAPACITY - self._water_tank
         amount_to_pump = min(PUMP_CAPACITY, self._aquifer, space_in_tank)
         
-        self._aquifer -= amount_to_pump
-        self._water_tank = min(WATER_TANK_CAPACITY, self._water_tank + amount_to_pump)
+        self._aquifer = round(max(0.0, self._aquifer - amount_to_pump), 2)
+        self._water_tank = round(min(WATER_TANK_CAPACITY, self._water_tank + amount_to_pump), 2)
         
         return 0.1 # Minor reward for maintaining infrastructure
+
+    def _handle_buy_plot(self, action: FarmAction) -> float:
+        """
+        Procures a new plot of land.
+        Cost: PLOT_BASE_COST ($100) + slight market variance (±10%).
+        """
+        # Calculate dynamic cost
+        variance = self._rng.uniform(-0.1, 0.1) # ±10%
+        actual_cost = round(PLOT_BASE_COST * (1.0 + variance), 2)
+
+        if self._money < actual_cost:
+            return -1.0 # Cannot afford
+            
+        self._money = round(self._money - actual_cost, 2)
+        new_id = len(self._plots)
+        self._plots.append(PlotState(plot_id=new_id))
+        
+        return 0.5 # Expansion bonus
 
     def _handle_wait(self) -> float:
         active_plots = sum(
@@ -919,24 +930,24 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         
         if self._rng.random() < chance:
             # It rains! Amount is a range around the base precip
-            self._current_precip = cfg["precip"] * self._rng.uniform(0.5, 2.0)
-            self._current_humidity = min(1.0, cfg["humidity"] * 1.2)
-            self._current_temp = cfg["temp"] - self._rng.uniform(2, 5) # Raining is cooler
+            self._current_precip = round(cfg["precip"] * self._rng.uniform(0.5, 2.0), 2)
+            self._current_humidity = round(min(1.0, cfg["humidity"] * 1.2), 2)
+            self._current_temp = round(cfg["temp"] - self._rng.uniform(2, 5), 1) # Raining is cooler
         else:
             # Sunny/Cloudy day
             self._current_precip = 0.0
-            self._current_humidity = cfg["humidity"] * self._rng.uniform(0.8, 1.0)
-            self._current_temp = cfg["temp"] + self._rng.uniform(-2, 5) # Sunny can be hotter
+            self._current_humidity = round(cfg["humidity"] * self._rng.uniform(0.8, 1.0), 2)
+            self._current_temp = round(cfg["temp"] + self._rng.uniform(-2, 5), 1) # Sunny can be hotter
 
         # 1. refill aquifer and water tank from precipitation
         task_cfg = self._task_config()
         recharge_mult = 0.5 if self._drought_active else 1.0  # Drought = slow recharge
         
-        precip_litres = self._current_precip * 2   # 1mm ~ 2L
-        self._aquifer = min(AQUIFER_CAPACITY, self._aquifer + (precip_litres * recharge_mult))
+        precip_litres = round(self._current_precip * 2, 2)   # 1mm ~ 2L
+        self._aquifer = round(min(AQUIFER_CAPACITY, self._aquifer + (precip_litres * recharge_mult)), 2)
         
         # Rain directly fills the water tank now (up to capacity)
-        self._water_tank = min(WATER_TANK_CAPACITY, self._water_tank + precip_litres)
+        self._water_tank = round(min(WATER_TANK_CAPACITY, self._water_tank + precip_litres), 2)
 
         # 1.5 daily overhead (maintenance/taxes)
         self._money = max(0.0, round(self._money - task_cfg["overhead"], 2))
@@ -949,9 +960,9 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         climate = self._current_climate()
         for plot in self._plots:
             # Soil Regeneration: background recovery of nutrients
-            plot.nitrogen = min(1.0, plot.nitrogen + 0.005)
-            plot.phosphorus = min(1.0, plot.phosphorus + 0.005)
-            plot.potassium = min(1.0, plot.potassium + 0.005)
+            plot.nitrogen = round(min(1.0, plot.nitrogen + 0.005), 4)
+            plot.phosphorus = round(min(1.0, plot.phosphorus + 0.005), 4)
+            plot.potassium = round(min(1.0, plot.potassium + 0.005), 4)
 
             # Weeds can grow on empty plots now!
             if plot.stage == "empty":
@@ -984,8 +995,8 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
                 
             # pest damage (exponential)
             if plot.has_pests:
-                plot.pest_severity = min(1.0, (plot.pest_severity + 0.1) * 1.5)
-                plot.health = max(0.0, plot.health - (0.05 * plot.pest_severity))
+                plot.pest_severity = round(min(1.0, (plot.pest_severity + 0.1) * 1.5), 4)
+                plot.health = round(max(0.0, plot.health - (0.05 * plot.pest_severity)), 4)
 
             # physics-informed moisture change (Rain benefit - FAO-56 ETc - Weed penalty)
             # simplified ETo: higher temp and lower humidity = higher transpiration
@@ -1009,9 +1020,9 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             seed_cfg  = SEED_CONFIG.get(plot.crop_type)
             if seed_cfg:
                 n_drain, p_drain, k_drain = seed_cfg["npk_drain"]
-                plot.nitrogen = max(0.0, plot.nitrogen - n_drain - (0.02 if plot.has_weeds else 0.0))
-                plot.phosphorus = max(0.0, plot.phosphorus - p_drain - (0.02 if plot.has_weeds else 0.0))
-                plot.potassium = max(0.0, plot.potassium - k_drain - (0.02 if plot.has_weeds else 0.0))
+                plot.nitrogen = round(max(0.0, plot.nitrogen - n_drain - (0.02 if plot.has_weeds else 0.0)), 4)
+                plot.phosphorus = round(max(0.0, plot.phosphorus - p_drain - (0.02 if plot.has_weeds else 0.0)), 4)
+                plot.potassium = round(max(0.0, plot.potassium - k_drain - (0.02 if plot.has_weeds else 0.0)), 4)
 
             # HEALTH LOGIC: Damage vs Recovery
             # 1. Damage (NPK, Moisture, Pests, Overwater)
@@ -1049,7 +1060,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
                 total_recovery = base_recovery * m_factor * n_factor * p_factor * w_factor
             
             # Apply Net Change
-            plot.health = max(0.0, min(1.0, plot.health + total_recovery - total_damage))
+            plot.health = round(max(0.0, min(1.0, plot.health + total_recovery - total_damage)), 4)
 
             # If crop dies from damage/decay, immediately wither
             if plot.health <= 0.0 and plot.stage != "withered":
@@ -1191,9 +1202,9 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         eto = (climate.temperature / 100.0) * (1.1 - climate.humidity)
 
         # Economics
-        total_storage_value = sum(qty * self._market_prices[c].sell_price for c, qty in self._storage.items())
-        inventory_value = sum(qty * SEED_CONFIG[c]['base_buy'] for c, qty in self._seed_inventory.items())
-        net_worth = self._money + total_storage_value + inventory_value
+        total_storage_value = round(sum(qty * self._market_prices[c].sell_price for c, qty in self._storage.items()), 2)
+        inventory_value = round(sum(qty * SEED_CONFIG[c]['base_buy'] for c, qty in self._seed_inventory.items()), 2)
+        net_worth = round(self._money + total_storage_value + inventory_value, 2)
 
         # Water runway in days
         total_etc = sum(
@@ -1293,7 +1304,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
 
         # Item 5: Filter zero quantities
         seeds_in_hand = [f"{s}: {q}" for s, q in self._seed_inventory.items() if q > 0]
-        storage_items = [f"{s}: {q:.1f}kg" for s, q in self._storage.items() if q > 0]
+        storage_items = [f"{s}: {round(q, 1)}kg" for s, q in self._storage.items() if q > 0]
         
         lines.append("")
         lines.append("SEEDS IN HAND: " + (", ".join(seeds_in_hand) if seeds_in_hand else "none"))
@@ -1333,16 +1344,49 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             day=self._day,
             money=round(self._money, 2),
             water_tank=round(self._water_tank / WATER_TANK_CAPACITY, 3),
+            aquifer=round(self._aquifer, 2),
             seed_inventory=dict(self._seed_inventory),
             storage={k: round(v, 2) for k, v in self._storage.items()},
-            plots=list(self._plots),
-            climate=self._current_climate(),
-            market_prices=dict(self._market_prices),
+            plots=[
+                PlotState(
+                    plot_id=p.plot_id,
+                    crop_type=p.crop_type,
+                    stage=p.stage,
+                    days_planted=p.days_planted,
+                    soil_moisture=round(p.soil_moisture, 4),
+                    health=round(p.health, 4),
+                    yield_estimate=round(p.yield_estimate, 2),
+                    nitrogen=round(p.nitrogen, 4),
+                    phosphorus=round(p.phosphorus, 4),
+                    potassium=round(p.potassium, 4),
+                    has_weeds=p.has_weeds,
+                    has_pests=p.has_pests,
+                    pest_severity=round(p.pest_severity, 4),
+                    pesticide_protection=p.pesticide_protection,
+                    days_mature=p.days_mature,
+                    days_critical=p.days_critical
+                ) for p in self._plots
+            ],
+            climate=ClimateState(
+                climate_type=self._current_climate().climate_type,
+                temperature=round(self._current_temp, 1),
+                humidity=round(self._current_humidity, 2),
+                precipitation=round(self._current_precip, 2)
+            ),
+            market_prices={
+                k: MarketPrice(
+                    seed_type=v.seed_type,
+                    buy_price=round(v.buy_price, 2),
+                    sell_price=round(v.sell_price, 2),
+                    trend=round(v.trend, 4),
+                    avg_7d=round(v.avg_7d, 2)
+                ) for k, v in self._market_prices.items()
+            },
             text_summary=self._build_text_summary(last_reward=reward),
-            labor_remaining=round(self._labor_hours, 2),
+            labor_remaining=round(self._labor_hours, 1),
             valid_actions=self._build_valid_actions(),
             weather_forecast=self._build_weather_forecast(),
-            reward=reward,
+            reward=round(reward, 4) if reward is not None else None,
             done=done,
         )
         # Clamp grade strictly to (0.01, 0.99) — never 0.0 or 1.0 to pass Phase 2 validation.

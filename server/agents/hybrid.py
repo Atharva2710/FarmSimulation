@@ -3,6 +3,7 @@ import json
 import os
 import re
 from typing import Dict, Any, Tuple, Optional
+import openai
 from openai import OpenAI
 import textwrap
 
@@ -33,6 +34,7 @@ class HybridAgent:
             1. SURVIVAL (Priority 1): Maintain > 3 days of Water Runway and Moisture > RAW Depletion Limit (e.g., Rice: 80%, Corn: 50%, Wheat: 45%).
             2. PUMPING: If Tank < 15L and Runway < 5 days, PUMP water.
             3. EXPONENTIAL GROWTH (Priority 2):
+               - If Money > $150 and all plots are occupied/harvestable: BUY_PLOT to scale capacity.
                - If Money > $150: Plant CORN (Highest yield).
                - If Money > $80: Plant RICE.
                - Otherwise: Plant WHEAT.
@@ -43,12 +45,12 @@ class HybridAgent:
             REASONING STRUCTURE:
             - RISK AUDIT: Moisture Stress? Tank Critical?
             - MARKET AUDIT: Is current price at a 7-day peak?
-            - ACTION: Prioritize EXPANSION if survival is secure.
+            - ACTION: Prioritize EXPANSION (buy_plot or plant) if survival is secure.
             
             OUTPUT FORMAT (Strict JSON):
             {
               "fidelity_audit": {"runway_days": float, "net_worth": float, "is_peak": bool},
-              "action": {"action_type": "...", "plot_id": 0-3, "seed_type": "...", "quantity": 1},
+              "action": {"action_type": "...", "plot_id": int, "seed_type": "...", "quantity": 1},
               "thought": "Deep audit of Runway, 7-day Price Delta, and Growth ROI."
             }
         """).strip()
@@ -101,9 +103,9 @@ class HybridAgent:
             
         return "\n".join(lines)
 
-    def act(self, obs: FarmObservation, api_token: Optional[str] = None) -> Dict[str, Any]:
+    def act(self, obs: FarmObservation, api_token: Optional[str] = None, use_heuristic: bool = False, mode: str = "physics") -> Dict[str, Any]:
         """
-        1. Run Heuristic to get safe advice.
+        1. Optionally run Heuristic to get safe advice.
         2. Call LLM for strategic optimization.
         """
         if api_token and api_token.strip():
@@ -111,18 +113,29 @@ class HybridAgent:
                 self.client = OpenAI(base_url=API_BASE_URL, api_key=api_token)
                 self._last_token = api_token
         
-        # 1. Get Heuristic Suggestion (Safety Fallback)
-        h_action, h_thought = self.heuristic.act(obs)
+        # 1. Get Heuristic Suggestion (Conditional)
+        h_action = {"action_type": "wait"}
+        h_thought = "Heuristic advisory disabled."
+        
+        if use_heuristic:
+            h_action, h_thought = self.heuristic.act(obs, mode=mode)
         
         # 2. Build Message
         state_text = self._build_state_text(obs)
+        
+        heuristic_section = ""
+        if use_heuristic:
+            heuristic_section = textwrap.dedent(f"""
+                --- HEURISTIC ADVISORY (SAFETY FALLBACK) ---
+                Suggestion: {json.dumps(h_action)}
+                Logic: {h_thought}
+            """).strip()
+
         user_message = textwrap.dedent(f"""
             --- SENSOR DATA (Day {obs.day}) ---
             {state_text}
             
-            --- HEURISTIC ADVISORY (SAFETY FALLBACK) ---
-            Suggestion: {json.dumps(h_action)}
-            Logic: {h_thought}
+            {heuristic_section}
             
             --- TRIAGE AUDIT TEMPLATE ---
             1. RISK AUDIT: Moisture Stress? Runway Panic?
@@ -191,16 +204,28 @@ class HybridAgent:
                 "fidelity_audit": fidelity
             }
             
+        except openai.AuthenticationError:
+            return {
+                "action": h_action if use_heuristic else {"action_type": "wait"},
+                "thought": "❌ AUTH ERROR (401): Missing or invalid HF Token. Please check your credentials.",
+                "fidelity_audit": fidelity
+            }
+        except openai.RateLimitError:
+            return {
+                "action": h_action if use_heuristic else {"action_type": "wait"},
+                "thought": "❌ RATE LIMIT (429): HuggingFace API limit reached. Try again in a few minutes.",
+                "fidelity_audit": fidelity
+            }
         except Exception as e:
             err_str = str(e)
             if "401" in err_str or "unauthorized" in err_str.lower():
                 return {
-                    "action": h_action,
-                    "thought": f"❌ AUTH ERROR (401): Please check your HF Token in the control panel.",
+                    "action": h_action if use_heuristic else {"action_type": "wait"},
+                    "thought": "❌ AUTH ERROR: Invalid token or unauthorized request.",
                     "fidelity_audit": fidelity
                 }
             return {
-                "action": h_action,
-                "thought": f"❌ LLM ERROR: {err_str}. Using Safety Mode.",
+                "action": h_action if use_heuristic else {"action_type": "wait"},
+                "thought": f"❌ LLM ERROR: {err_str}",
                 "fidelity_audit": fidelity
             }
