@@ -29,7 +29,7 @@ custom_css = """
     --muted:       #94a3b8;
     --font-sans:   'Inter', sans-serif;
     --font-mono:   'JetBrains Mono', monospace;
-    --font-head:   'Syne', sans-serif;
+    --font-head:   'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     --r:           12px;
     --rl:          16px;
 }
@@ -465,6 +465,7 @@ DOCS_HTML = """
 
 /* Reset Gradio interference */
 #fs-docs h1,#fs-docs h2,#fs-docs h3,#fs-docs h4 {
+  font-family: 'Inter', -apple-system, system-ui, sans-serif !important;
   background: none !important;
   -webkit-text-fill-color: unset !important;
   background-clip: unset !important;
@@ -604,7 +605,7 @@ DOCS_HTML = """
   border: 1px solid; position: relative; overflow: hidden;
 }
 .fs-task-num { font-family:'DM Mono',monospace; font-size:0.65rem; opacity:0.45; margin-bottom:10px; }
-.fs-task h4 { font-family:'Syne','Outfit',sans-serif !important; font-size:1rem !important; color:#fff !important; margin-bottom:8px !important; }
+.fs-task h4 { font-family: 'Inter', sans-serif !important; font-size:1.15rem !important; font-weight: 700 !important; color:#fff !important; margin-bottom:8px !important; }
 .fs-task .fs-meta { font-size:0.78rem; color:#7a8f82; margin-bottom:10px; }
 .fs-task .fs-challenge { font-size:0.83rem; color:#e2e8e4; }
 .fs-task-easy { background:rgba(34,197,94,0.05); border-color:rgba(34,197,94,0.2); }
@@ -631,9 +632,14 @@ DOCS_HTML = """
 
 /* ── Alert ── */
 .fs-alert {
-  display:flex; gap:12px; padding:14px 18px;
-  border-radius:8px; margin:18px 0;
-  border:1px solid; font-size:0.85rem;
+  display: block !important; 
+  padding: 16px 20px !important;
+  border-radius: 12px !important; 
+  margin: 20px 0 !important;
+  border: 1px solid !important; 
+  font-size: 0.95rem !important;
+  line-height: 1.6 !important;
+  text-align: left !important;
 }
 .fs-alert-warn { background:rgba(245,158,11,0.07); border-color:rgba(245,158,11,0.25); }
 .fs-alert-warn strong { color:#f59e0b; }
