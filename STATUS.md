@@ -4,7 +4,8 @@
 - Branch: a/ws1
 - DONE: WS1.1 narrative observation layer (green verification)
 - DONE: WS1.2 narrative content (4 components: weather, market, logs, gossip)
-- Next: WS1.3 Robustness Validation & Audit Utils
+- DONE: WS1.3 Robustness validation (skill gradient PASSED) + audit verify fix + MCP name check
+- Next: HANDOFF #1 → merge a/ws1 → main, then WS2 (economy hardening)
 
 ## Person B — Vivek
 - Branch: b/ws4-notebook
