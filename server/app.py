@@ -16,24 +16,15 @@ from openenv.core import create_app
 from farming_environment import FarmingEnvironment
 from models import FarmAction, FarmObservation  
 
-GLOBAL_ENV = None
 
 
 def make_env() -> FarmingEnvironment:
     """
     Factory function — create_app calls this every time it needs
-    a fresh environment instance. 
-
-    By returning a singleton, we preserve state across stateless HTTP calls.
-
-    task_id can be overridden via FARMING_TASK_ID environment variable.
-
+    a fresh environment instance for a new session. 
     """
-    global GLOBAL_ENV
-    if GLOBAL_ENV is None:
-        task_id = int(os.getenv("FARMING_TASK_ID", "1"))
-        GLOBAL_ENV = FarmingEnvironment(task_id=task_id)
-    return GLOBAL_ENV
+    task_id = int(os.getenv("FARMING_TASK_ID", "1"))
+    return FarmingEnvironment(task_id=task_id)
 
 
 import gradio as gr
