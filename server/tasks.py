@@ -6,146 +6,179 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
-from models import SEED_CONFIG
 
 @dataclass
 class EpisodeRecord:
     task_id:        int
     initial_money:  float
     final_money:    float
-    storage_value:  float          # market value of unsold crops at end
+    storage_value:  float
     total_reward:   float
     days_elapsed:   int
     max_days:       int
-    withered_count: int            # total crops that withered across episode
-    drought_days:   int            # days where drought_active was True
-    healthy_days:   int            # plot-days where at least 2 plots were healthy
+    withered_count: int
+    drought_days:   int
+    healthy_days:   int
     sell_events:    List[Dict[str, Any]] = field(default_factory=list)
-    # each sell event: {"day": int, "crop": str, "qty": float, "price": float, "base_price": float}
 
-def grade_task1(record: EpisodeRecord) -> float:
-    """
-    Easy task — single crop, stable climate.
-    Perfect score = double your starting money.
-    """
-    if record.initial_money <= 0:
-        return 0.01
 
+# ── Pure scorer functions ──────────────────────────────────────────────────────
+
+def _score_profit(record: EpisodeRecord, target_mult: float) -> float:
     net_worth = record.final_money + record.storage_value
+    ratio = net_worth / max(record.initial_money * target_mult, 1.0)
+    return min(0.99, max(0.01, ratio))
 
-    # WS2 FIX 4: binary competence gate — bankrupt agent scores floor regardless
-    if net_worth < record.initial_money:
-        return 0.01
 
-    ratio     = net_worth / (record.initial_money * 2.0)
-    score     = min(0.99, max(0.01, ratio))
+def _score_stewardship(record: EpisodeRecord) -> float:
+    return min(0.99, record.healthy_days / max(record.max_days, 1))
 
-    # small penalty for any withered crops (shouldn't happen on easy mode)
-    wither_penalty = min(0.2, record.withered_count * 0.05)
-    score          = max(0.01, score - wither_penalty)
 
-    return round(max(0.01, min(0.99, score)), 4)
+def _score_efficiency(record: EpisodeRecord) -> float:
+    wither_rate = record.withered_count / max(record.days_elapsed, 1)
+    return min(0.99, max(0.01, 1.0 - wither_rate * 2.0))
 
-def grade_task2(record: EpisodeRecord) -> float:
-    """
-    Medium task — multi-crop, market timing.
-    Score = 0.6 × profit_score + 0.4 × timing_score
-    """
-    if record.initial_money <= 0:
-        return 0.01
 
-    # profit component
-    net_worth     = record.final_money + record.storage_value
-
-    # WS2 FIX 4: binary competence gate
-    if net_worth < record.initial_money:
-        return 0.01
-
-    profit_ratio  = net_worth / (record.initial_money * 2.5)
-    profit_score  = min(0.99, max(0.01, profit_ratio))
-
-    # timing component — what fraction of sell revenue came from above-base prices
+def _score_timing(record: EpisodeRecord) -> float:
     if not record.sell_events:
-        timing_score = 0.01
-    else:
-        good_revenue  = 0.0
-        total_revenue = 0.0
-        for event in record.sell_events:
-            revenue      = event["price"] * event["qty"]
-            base_revenue = event["base_price"] * event["qty"]
-            total_revenue += revenue
-            if event["price"] > event["base_price"]:
-                good_revenue += revenue - base_revenue   # only the premium
-
-        if total_revenue > 0:
-            timing_score = min(0.99, good_revenue / (total_revenue * 0.3))
-        else:
-            timing_score = 0.01
-
-    # wither penalty is harsher on medium
-    wither_penalty = min(0.3, record.withered_count * 0.1)
-
-    score = (0.6 * profit_score) + (0.4 * timing_score)
-    score = max(0.01, score - wither_penalty)
-    return round(max(0.01, min(0.99, score)), 4)
-
-def grade_task3(record: EpisodeRecord) -> float:
-    """
-    Hard task — drought, spoilage, resource pressure.
-    Score = 0.5 × profit_score + 0.3 × survival_score + 0.2 × resilience_score
-    """
-    if record.initial_money <= 0:
         return 0.01
-
-    # profit component — target is 3× starting money (hard to achieve with drought)
-    net_worth    = record.final_money + record.storage_value
-
-    # WS2 FIX 4: binary competence gate
-    if net_worth < record.initial_money:
+    good_revenue = 0.0
+    total_revenue = 0.0
+    for e in record.sell_events:
+        revenue = e["price"] * e["qty"]
+        total_revenue += revenue
+        if e["price"] > e["base_price"]:
+            good_revenue += revenue - e["base_price"] * e["qty"]
+    if total_revenue <= 0:
         return 0.01
+    return min(0.99, good_revenue / (total_revenue * 0.3))
 
-    profit_ratio = net_worth / (record.initial_money * 3.0)
-    profit_score = min(0.99, max(0.01, profit_ratio))
 
-    # survival component — did the agent survive the full episode without bankruptcy?
+def _score_resilience(record: EpisodeRecord) -> float:
+    if record.max_days <= 0:
+        return 0.01
+    return min(0.99, record.healthy_days / record.max_days)
+
+
+def _score_survival(record: EpisodeRecord) -> float:
     if record.final_money > 0 and record.days_elapsed >= record.max_days:
-        survival_score = 0.99
-    elif record.final_money > 0:
-        # survived but episode ended early (shouldn't happen unless bug)
-        survival_score = record.days_elapsed / record.max_days
-    else:
-        # went bankrupt
-        survival_score = 0.01
+        return 0.99
+    if record.final_money > 0:
+        return record.days_elapsed / record.max_days
+    return 0.01
 
-    # resilience component — fraction of days where at least 2 plots stayed healthy
-    if record.max_days > 0:
-        resilience_score = min(0.99, record.healthy_days / record.max_days)
-    else:
-        resilience_score = 0.01
 
-    # wither penalty is harshest on hard mode
-    wither_penalty = min(0.4, record.withered_count * 0.15)
+# ── RubricComposer ─────────────────────────────────────────────────────────────
 
-    score = (
-        0.5 * profit_score
-      + 0.3 * survival_score
-      + 0.2 * resilience_score
-    )
-    score = max(0.01, score - wither_penalty)
-    return round(max(0.01, min(0.99, score)), 4)
+@dataclass
+class Dimension:
+    name:    str
+    weight:  float
+    scorer:  Callable[[EpisodeRecord], float]
+
+    def compute(self, record: EpisodeRecord) -> float:
+        return round(self.scorer(record), 4)
+
+
+@dataclass
+class Gate:
+    name:          str
+    condition:     Callable[[EpisodeRecord], bool]
+    on_fail_score: float
+
+    def check(self, record: EpisodeRecord) -> bool:
+        return self.condition(record)
+
+
+class RubricComposer:
+    def __init__(self, gates: List[Gate], dimensions: List[Dimension]) -> None:
+        self.gates      = gates
+        self.dimensions = dimensions
+
+    def grade(self, record: EpisodeRecord) -> dict:
+        for gate in self.gates:
+            if not gate.check(record):
+                return {
+                    "score":      gate.on_fail_score,
+                    "dimensions": {},
+                    "gated":      gate.name,
+                }
+        dim_scores = {d.name: d.compute(record) for d in self.dimensions}
+        weighted = sum(dim_scores[d.name] * d.weight for d in self.dimensions)
+        return {
+            "score":      round(min(0.99, max(0.01, weighted)), 4),
+            "dimensions": dim_scores,
+            "gated":      None,
+        }
+
+
+# ── Per-task rubrics ──────────────────────────────────────────────────────────
+
+def _net_worth(r: EpisodeRecord) -> float:
+    return r.final_money + r.storage_value
+
+TASK1_RUBRIC = RubricComposer(
+    gates=[
+        Gate("solvency", lambda r: _net_worth(r) >= r.initial_money, 0.01),
+    ],
+    dimensions=[
+        Dimension("profit",      0.7, lambda r: _score_profit(r, 2.0)),
+        Dimension("stewardship", 0.2, _score_stewardship),
+        Dimension("efficiency",  0.1, _score_efficiency),
+    ],
+)
+
+TASK2_RUBRIC = RubricComposer(
+    gates=[
+        Gate("solvency", lambda r: _net_worth(r) >= r.initial_money, 0.01),
+    ],
+    dimensions=[
+        Dimension("profit",      0.6, lambda r: _score_profit(r, 2.5)),
+        Dimension("timing",      0.3, _score_timing),
+        Dimension("efficiency",  0.1, _score_efficiency),
+    ],
+)
+
+TASK3_RUBRIC = RubricComposer(
+    gates=[
+        Gate("solvency", lambda r: _net_worth(r) >= r.initial_money, 0.01),
+    ],
+    dimensions=[
+        Dimension("profit",      0.5, lambda r: _score_profit(r, 3.0)),
+        Dimension("survival",    0.3, _score_survival),
+        Dimension("resilience",  0.2, _score_resilience),
+    ],
+)
+
+_RUBRICS = {1: TASK1_RUBRIC, 2: TASK2_RUBRIC, 3: TASK3_RUBRIC}
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+def grade_episode_detailed(record: EpisodeRecord) -> dict:
+    """Returns full rubric breakdown: {score, dimensions, gated}."""
+    rubric = _RUBRICS.get(record.task_id)
+    if rubric is None:
+        raise ValueError(f"Unknown task_id: {record.task_id}")
+    return rubric.grade(record)
+
 
 def grade_episode(record: EpisodeRecord) -> float:
-    """Route to the correct grader by task_id. Returns float strictly in (0.0, 1.0)."""
-    if record.task_id == 1:
-        score = grade_task1(record)
-    elif record.task_id == 2:
-        score = grade_task2(record)
-    elif record.task_id == 3:
-        score = grade_task3(record)
-    else:
-        raise ValueError(f"Unknown task_id: {record.task_id}")
-    
-    # Strictly clamp to (0, 1) to pass Phase 2 validation
-    return round(max(0.01, min(0.99, score)), 4)
+    """Returns scalar score in (0.01, 0.99) — backward-compatible entry point."""
+    return grade_episode_detailed(record)["score"]
+
+
+# ── Thin wrappers kept for test_phase4.py compatibility ──────────────────────
+
+def grade_task1(record: EpisodeRecord) -> float:
+    return grade_episode(record) if record.task_id == 1 else TASK1_RUBRIC.grade(record)["score"]
+
+
+def grade_task2(record: EpisodeRecord) -> float:
+    return grade_episode(record) if record.task_id == 2 else TASK2_RUBRIC.grade(record)["score"]
+
+
+def grade_task3(record: EpisodeRecord) -> float:
+    return grade_episode(record) if record.task_id == 3 else TASK3_RUBRIC.grade(record)["score"]

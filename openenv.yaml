@@ -1,15 +1,17 @@
 name: farming-env
-version: "1.0.0"
+version: "1.1.0"
 description: >
-  A farming simulation RL environment where an agent manages
-  4 land plots across 3 rotating climates, buying seeds,
-  planting crops, irrigating, harvesting and selling for profit.
+  A long-horizon economic and resource-management simulation where an agent
+  must synthesize noisy textual data to survive dynamic market and climate
+  volatility. The agent manages 4 land plots across 3 rotating climates,
+  buying seeds, planting crops, irrigating, harvesting and selling for profit.
 author: "your-hf-username"
 license: MIT
 tags:
   - openenv
   - farming
   - resource-management
+  - long-horizon
   - planning
   - rl
 
@@ -28,6 +30,23 @@ tasks:
     description: >
       30 days, $200 starting money, temperate-dominant climate.
       Goal: double your money. One crop type recommended.
+    grader:
+      type: composite
+      gates:
+        - condition: "net_worth >= initial_money"
+          on_fail_score: 0.01
+          label: solvency
+      dimensions:
+        - name: profit
+          weight: 0.7
+          metric: net_worth_ratio
+          target_mult: 2.0
+        - name: stewardship
+          weight: 0.2
+          metric: healthy_day_fraction
+        - name: efficiency
+          weight: 0.1
+          metric: wither_rate_inverse
 
   - id: task_2
     name: "Multi-Crop Market Timing"
@@ -35,6 +54,23 @@ tasks:
     description: >
       45 days, $150 starting money, full climate rotation.
       Goal: profit across all 3 crops, sell at peak market prices.
+    grader:
+      type: composite
+      gates:
+        - condition: "net_worth >= initial_money"
+          on_fail_score: 0.01
+          label: solvency
+      dimensions:
+        - name: profit
+          weight: 0.6
+          metric: net_worth_ratio
+          target_mult: 2.5
+        - name: timing
+          weight: 0.3
+          metric: above_base_premium_fraction
+        - name: efficiency
+          weight: 0.1
+          metric: wither_rate_inverse
 
   - id: task_3
     name: "Drought Survival"
@@ -42,3 +78,20 @@ tasks:
     description: >
       60 days, $100 starting money, drought events, fast spoilage.
       Goal: survive and profit under resource pressure.
+    grader:
+      type: composite
+      gates:
+        - condition: "net_worth >= initial_money"
+          on_fail_score: 0.01
+          label: solvency
+      dimensions:
+        - name: profit
+          weight: 0.5
+          metric: net_worth_ratio
+          target_mult: 3.0
+        - name: survival
+          weight: 0.3
+          metric: full_episode_survival
+        - name: resilience
+          weight: 0.2
+          metric: healthy_day_fraction
