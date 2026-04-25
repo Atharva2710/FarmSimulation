@@ -52,11 +52,11 @@ def run_random_agent(task_id: int):
         done = obs.done
         
         # Failsafe infinite loop break
-        if step > 100:
+        if step > 2000:
             print("ERROR: Simulation exceeded maximum expected steps.")
             break
 
-    print(f"Task {task_id} finished after {step} days (Target: {env._max_days}).")
+    print(f"Task {task_id} finished after {step} steps (Target days: {env._max_days}).")
     print(f"Final Money: ${obs.money:.2f}")
     print(f"Total Accumulated Reward: {total_reward:.2f}")
     assert obs.done, f"Task {task_id} did not finish properly."
@@ -77,8 +77,8 @@ if __name__ == "__main__":
         run_random_agent(2)
         run_random_agent(3)
         
-        print("\n✅ Verification complete: The Farming Simulation environment is fully stable!")
+        print("\nVerification complete: The Farming Simulation environment is fully stable!")
     except subprocess.CalledProcessError as e:
-        print(f"\n❌ Verification failed during script execution: {e}")
+        print(f"\nVerification failed during script execution: {e}")
     except AssertionError as e:
-        print(f"\n❌ Verification failed during simulation: {e}")
+        print(f"\nVerification failed during simulation: {e}")

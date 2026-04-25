@@ -84,6 +84,7 @@ def test_withering_penalty():
     for _ in range(13):
         env.step(FarmAction(action_type="wait"))
 
+
     assert env._plots[0].stage == "withered", f"expected withered got {env._plots[0].stage}"
     print("withering_penalty() OK")
 
