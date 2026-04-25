@@ -137,6 +137,7 @@ class FarmObservation(Observation):
     climate:        Optional[ClimateState] = Field(None)
     market_prices:  Dict[str, MarketPrice] = Field(default_factory=dict, description="keyed by seed name")
     text_summary:   str                    = Field("", description="human-readable state for LLM")
+    narrative_text: str                    = Field("", description="WS1 v2 LLM-native pivot: noisy daily journal + weather report + neighbor email + market gossip; LLM consumes this as primary state when non-empty (structured fields remain for graders/tests/fallback)")
     labor_remaining: float                 = Field(10.0, ge=0.0, le=10.0, description="hours left in current day")
     valid_actions:  List[str]              = Field(default_factory=list, description="action hints for agent")
     weather_forecast: List[Dict[str, Any]] = Field(default_factory=list, description="7-day climate forecast with confidence decay")
