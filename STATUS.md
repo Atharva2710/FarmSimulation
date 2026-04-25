@@ -1,4 +1,4 @@
-# Live Status (last updated H+0 by A)
+# Live Status (last updated H+1 by B)
 
 ## Person A — Ashdeep
 - Branch: a/ws1
@@ -8,10 +8,11 @@
 - Next: HANDOFF #1 → merge a/ws1 → main, then WS2 (economy hardening)
 
 ## Person B — Vivek
-- Branch: b/ws4-notebook
-- In progress: TBD — B will update
-- Blocked on: A's HANDOFF #1 at H+5
-- Next: notebook cells 1-4 (Unsloth model load + LoRA)
+- Branch: b/ws4-notebook (rebased on main HEAD `0c701e1`)
+- DONE: H+0–1 — cells 1-4 green on Colab T4. Pin matrix locked: unsloth 2026.4.x · trl 0.22.2 · transformers 4.56.2 · huggingface_hub 1.12.0 · torch 2.10.0+cu128. lora_dropout=0.05 (plan §20.3, accepts ~30-50% Unsloth fast-path penalty).
+- In progress: H+1 drafting cells 6 (parse_action) + 8 (prompt_dataset) + 9 (GRPOConfig) + 10 (GRPOTrainer scaffold). All independent of WS2/WS3.
+- Blocked on: HANDOFF #2 (A's WS2 merge) for cells 5 (FarmEnvClient) and 7 (reward functions).
+- Next: post-WS2, fill cells 5/7 with live env URL + reward fn bodies; post-WS3, wire RubricComposer into reward functions.
 
 ## Reward Engineering Reference (from IMPLEMENTATION_PLAN.md §21.5)
 - Source: Planning/reward engg.md (9 named techniques + future-work roadmap)
