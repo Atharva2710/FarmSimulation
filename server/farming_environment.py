@@ -157,12 +157,18 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         seed: Optional[int] = None,
         episode_id: Optional[str] = None,
         task_id: Optional[int] = None,
+        noise_seed: Optional[int] = None,
         **kwargs: Any,
     ) -> FarmObservation:
 
         if seed is not None:
             self._rng.seed(seed)
-            
+
+        # WS1: independent RNG for narrative noise so judges/graders can reproduce
+        # noisy text obs deterministically (forecast lies, market gossip flips).
+        # Defaults to seed if noise_seed not provided so single-seed runs stay reproducible.
+        self._noise_rng = random.Random(noise_seed if noise_seed is not None else (seed if seed is not None else 0))
+
         # Also reset market impact for clean runs if requested
         if kwargs.get("reset_market", True):
             self._market_impact = {c: 1.0 for c in SEED_CONFIG}
@@ -1335,6 +1341,20 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
 
         return "\n".join(lines)
 
+    def _render_narrative_observation(self) -> str:
+        """WS1 v2 §1 LLM-native pivot — returns messy prose for the LLM to parse.
+
+        WS1.1: skeleton returning "". Filled in WS1.2 with 4 components:
+          1. Daily farmer's journal (vague health/moisture/stage prose)
+          2. Noisy weather report (25% lie rate on 3-day forecast)
+          3. Neighbor email (locust/pest alerts when pest_severity is medium+)
+          4. Market gossip (Bob next door + co-op newsletter; 70% aligned with true trend)
+
+        Uses self._noise_rng (seeded in reset()) for reproducible noise.
+        Empty return falls back to the structured text_summary in inference.py.
+        """
+        return ""
+
     def _build_observation(
         self,
         reward: Optional[float],
@@ -1383,6 +1403,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
                 ) for k, v in self._market_prices.items()
             },
             text_summary=self._build_text_summary(last_reward=reward),
+            narrative_text=self._render_narrative_observation(),
             labor_remaining=round(self._labor_hours, 1),
             valid_actions=self._build_valid_actions(),
             weather_forecast=self._build_weather_forecast(),
