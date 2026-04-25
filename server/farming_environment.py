@@ -111,6 +111,9 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         self._wasteful_actions: int            = 0
         self._total_actions:    int            = 0
 
+        # WS2: consecutive days the agent chose "wait" (patience-farm exploit cap)
+        self._consecutive_wait_days: int       = 0
+
         # Auto-initialize so the env works even without explicit reset()
         self.reset()
 
@@ -202,6 +205,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         self._last_grade     = 0.0
         self._withered_plots = set()
         self._journal        = []
+        self._consecutive_wait_days = 0
 
 
         # Initialize weather for Day 0
@@ -296,7 +300,11 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         self._last_action = act
         self._ticker_offset = (self._ticker_offset + 1) % 3
         self._prev_money = self._money
-        
+
+        # WS2 FIX 2: reset patience counter on any non-wait action
+        if act != "wait":
+            self._consecutive_wait_days = 0
+
         reward = self._execute_action(act, action)
         self._action_message = shift_msg + self._action_message
 
@@ -673,9 +681,10 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
 
         mid_price = self._market_prices[crop].sell_price
         
-        # 1. Temporary Market Impact (Slippage)
-        # 0.5% slippage per 10kg sold
-        slippage_pct = (qty / 10.0) * 0.005 
+        # 1. Temporary Market Impact (Almgren-Chriss superlinear slippage)
+        # WS2 FIX 3: exponent 1.5 makes large dumps disproportionately costly
+        slippage_pct = 0.005 * (qty / 10.0) ** 1.5
+        slippage_pct = min(slippage_pct, 0.30)  # cap at 30%
         execution_price = mid_price * (1.0 - slippage_pct)
         revenue = execution_price * qty
 
@@ -801,6 +810,11 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         return 0.5 # Expansion bonus
 
     def _handle_wait(self) -> float:
+        # WS2 FIX 2: cap passive bonus for repeated waiting (patience-farm exploit)
+        self._consecutive_wait_days += 1
+        waits = self._consecutive_wait_days
+        passive_multiplier = 1.0 if waits < 2 else 0.5 if waits < 4 else 0.0
+
         active_plots = sum(
             1 for p in self._plots
             if p.stage in ("seedling", "growing")
@@ -822,8 +836,8 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             return round(-0.3 * mature_plots, 4)
 
         if active_plots > 0 and idle_empty_plots == 0:
-            # crops growing, nothing else to do — smart patience
-            return round(0.05 * active_plots, 4)
+            # crops growing, nothing else to do — smart patience (capped after 2+ consecutive waits)
+            return round(0.05 * active_plots * passive_multiplier, 4)
 
         if idle_empty_plots > 0:
             # has seeds and empty plots but not planting
