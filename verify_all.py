@@ -68,15 +68,18 @@ if __name__ == "__main__":
     try:
         print("Running test_phase2.py...")
         subprocess.run([sys.executable, "test_phase2.py"], check=True)
-        
+
         print("\nRunning test_phase3.py...")
         subprocess.run([sys.executable, "test_phase3.py"], check=True)
-        
+
+        print("\nRunning test_phase4.py...")
+        subprocess.run([sys.executable, "test_phase4.py"], check=True)
+
         print("\nRunning end-to-end full simulations with random agent...")
         run_random_agent(1)
         run_random_agent(2)
         run_random_agent(3)
-        
+
         print("\nVerification complete: The Farming Simulation environment is fully stable!")
     except subprocess.CalledProcessError as e:
         print(f"\nVerification failed during script execution: {e}")
