@@ -19,10 +19,10 @@ from models import (
     MarketPrice,
 )
 try:
-    from tasks import EpisodeRecord, grade_episode
+    from tasks import EpisodeRecord, grade_episode, grade_episode_detailed
     from audit_utils import calculate_state_fidelity, calculate_tactical_report
 except ImportError:
-    from server.tasks import EpisodeRecord, grade_episode
+    from server.tasks import EpisodeRecord, grade_episode, grade_episode_detailed
     from server.audit_utils import calculate_state_fidelity, calculate_tactical_report
 
 
@@ -86,8 +86,9 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         self._healthy_days:   int              = 0
         self._sell_events:    list             = []
         self._price_history:  Dict[str, List[float]] = {"wheat": [], "rice": [], "corn": []}
-        self._last_grade:     float            = 0.0
-        self._withered_plots: set              = set()
+        self._last_grade:          float            = 0.0
+        self._last_grade_detailed: dict             = {}
+        self._withered_plots:      set              = set()
         
         # Daily dynamic weather fields
         self._current_temp:    float           = 22.0
@@ -202,9 +203,10 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         self._healthy_days   = 0
         self._sell_events    = []
         self._price_history  = {"wheat": [], "rice": [], "corn": []}
-        self._last_grade     = 0.0
-        self._withered_plots = set()
-        self._journal        = []
+        self._last_grade          = 0.0
+        self._last_grade_detailed = {}
+        self._withered_plots      = set()
+        self._journal             = []
         self._consecutive_wait_days = 0
 
 
@@ -423,7 +425,9 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             healthy_days=self._healthy_days,
             sell_events=self._sell_events,
         )
-        self._last_grade = grade_episode(record)
+        detailed = grade_episode_detailed(record)
+        self._last_grade          = detailed["score"]
+        self._last_grade_detailed = detailed
         # Clamp terminal bonus strictly to (0.01, 0.99) to satisfy Phase 2 score range validation.
         # A raw 0.0 return on bankruptcy causes Phase 2 failure.
         raw_bonus = self._terminal_bonus() if self._money > 0.0 else 0.0
@@ -1518,6 +1522,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         )
         # Clamp grade strictly to (0.01, 0.99) — never 0.0 or 1.0 to pass Phase 2 validation.
         obs.metadata["grade"]          = max(0.01, min(0.99, self._last_grade))
+        obs.metadata["grade_detailed"] = self._last_grade_detailed
         obs.metadata["withered_count"] = self._withered_count
         obs.metadata["action_message"] = self._clean_action_message
         return obs
