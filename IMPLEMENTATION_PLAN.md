@@ -68,40 +68,69 @@ This sentence goes verbatim in the README hero, the video opening, and any pitch
 
 ---
 
-## 4. 30-Hour Timeline
+## 4. 30-Hour Parallel Timeline (Two People, Two Claude Code Sessions)
 
-Two ~12h working blocks separated by a 6h sleep window. Hours are wall-clock from "start now."
+Two team members work in parallel on separate machines. Roles locked at H 0 (see §19):
 
-```
-BLOCK A — env + rubric + smoke (Hours 0-12)
-  H 0-1    Repo hygiene, cut/defer pass, file move (move self-assessment docs to Planning/archive/)
-  H 1-5    Workstream 1: Additive noisy-text observation layer (B1)
-  H 5-7    Workstream 2: Reward hardening (B2/B3)
-  H 7-9    Workstream 3: Composable RubricComposer + openenv.yaml extension
-  H 9-10   Re-baseline on pivoted env (random + heuristic + 72B zero-shot)
-  H 10-12  GRPO smoke run via Unsloth+TRL notebook on HF dedicated L4 (10 iters, K=2, Task 1)
+- **Person A — Env Lead.** Owns `server/`, `models.py`, `inference.py`, `openenv.yaml`, `verify_*.py`, `robustness_validation.py`, HF Space deploy.
+- **Person B — Training & Story Lead.** Owns `notebooks/`, `train.py`, `assets/*.png`, `README.md`, video, HF Hub upload.
 
-SLEEP (Hours 12-18, 6h hard block)
+Both work simultaneously throughout the 12-hour blocks. **HANDOFF** rows mark hard sync points (PR merge → both rebase before continuing).
 
-BLOCK B — full training + evidence + packaging (Hours 18-30)
-  H 18-19  Re-deploy HF Space with pivoted env; openenv validate; verify reserved-name compliance
-  H 19-21  Full GRPO run on Task 1 (50 iters, K=4, ~1.5h on L4)
-  H 21-22  While training: README outline + plot scaffolding scripts
-  H 22-24  Evidence harvest: 5 plots (reward, loss, baseline-comparison same-axes, action shift, trajectory diff)
-  H 24-25  Push trained LoRA adapter to HF Hub; re-run robustness_validation.py on pivoted env
-  H 25-27  README full rewrite with embedded results + links + theme alignment statement
-  H 27-29  Record <2 min video (script + screen capture + VO) — link only, do NOT commit file
-  H 29-30  Final submission checklist + buffer
-```
+### Block A — env pivot + smoke (Hours 0-12)
 
-**Hard rules:**
+| Hour | Person A (Env Lead) | Person B (Training & Story Lead) |
+|---|---|---|
+| H 0-1 | Repo hygiene: create `STATUS.md`, archive Planning meta-docs, lock pivot spec, branch `a/ws1` | Colab setup: `pip install unsloth trl==0.11.4`, HF + wandb login, verify all 3 team accounts can see $30 credit, branch `b/ws4-notebook` |
+| H 1-3 | **WS1.1:** add `narrative_text: str` to `models.py` `FarmObservation`; sketch `_render_narrative_observation()` in `farming_environment.py` | **Notebook cells 1-4:** `!pip install` cell, HF/W&B login, `FastLanguageModel.from_pretrained(unsloth/Qwen2.5-0.5B-Instruct-bnb-4bit, fast_inference=True)`, `get_peft_model(...)` with `use_gradient_checkpointing="unsloth"` |
+| H 3-5 | **WS1.2:** 4 narrative components (journal, weather report with 25% lie rate, neighbor locust email, market gossip); switch `inference.py` to consume `narrative_text` with structured fallback; PR `a/ws1` | **Notebook cells 5-7:** `FarmEnvClient` HTTP client (lift from `train.py:124-153`), `parse_action()` helper, **5 reward functions** per §20.1 + §21.2, scored against a stubbed local env (real env hooked at H 9-10) |
+| **H 5** | **HANDOFF #1:** A merges `a/ws1` → `main`. B `git pull --rebase main`. Notebook now has real `narrative_text` field to consume. | |
+| H 5-7 | **WS2:** 4 reward-hardening fixes (labor decrement, patience cap, Almgren-Chriss superlinear slippage, binary competence gate in `tasks.py`); run `verify_economics.py` + `verify_actions.py`; PR `a/ws2` | **Notebook cells 8-10:** build `prompt_dataset` (200 rows of seeded initial-state prompts), `GRPOConfig` with §20.2 locked hyperparameters (`loss_type="dapo"`, `beta=0.0`, `max_grad_norm=0.1`, etc.), `GRPOTrainer` init |
+| **H 7** | **HANDOFF #2:** A merges `a/ws2` → `main`. B rebases. Reward exploits closed before training touches the env. | |
+| H 7-9 | **WS3:** `RubricComposer` + `Dimension` + `Gate` classes in `tasks.py`; extend `openenv.yaml` with composite grader blocks per task; update `test_phase*.py` for new return shape; PR `a/ws3` | **Notebook cells 11-13:** plot generation scaffolding, `model.save_pretrained_merged()` + `huggingface_hub.upload_folder()` skeleton; metadata-printing final cell; smoke-test full notebook on T4 with stubbed env; commit `b/ws4-notebook` (don't merge yet) |
+| **H 9** | **HANDOFF #3:** A merges `a/ws3` → `main`. Both rebase. Pivoted env + composable rubric live on `main`. | |
+| H 9-10 | Re-baseline on pivoted env: random agent + heuristic agent + 72B zero-shot via `inference.py`; save `baseline_results_pivoted.json`; commit | Pull `main`; swap `FarmEnvClient` from stub to live HF Space URL; verify `narrative_text` field is non-empty in env response |
+| H 10-12 | Run `robustness_validation.py` on pivoted env; confirm skill gradient (random < heuristic < 72B) holds; if inverted → dial down forecast lie rate 25%→15% per §13 risk register | **GRPO smoke run:** 10 iters × K=2 on Task 1, free Colab T4 OR $1-2 on dedicated L4 if account-gating issues; bisect per §20.6 if flat (LR 5e-6→2e-6, then K 2→4, then check advantages); commit smoke logs |
+
+### SLEEP (Hours 12-18, 6h hard block, both team members)
+
+### Block B — full training + evidence + packaging (Hours 18-30)
+
+| Hour | Person A (Env Lead) | Person B (Training & Story Lead) |
+|---|---|---|
+| H 18-19 | Pull `main`; redeploy HF Space with pivoted env; run `validate-submission.sh <space-url>` + `openenv validate`; verify `/reset` and `/step` endpoints; check no MCP reserved-name collisions (`reset/step/state/close`) | Pull main + smoke results; spin dedicated **L4 Space** ($0.80/h) for training; pre-warm vLLM cache; verify $90 HF credit intact and not gated |
+| H 19-21 | Heuristic agent baseline (10 episodes × 3 tasks) + 72B zero-shot baseline via `inference.py` against live pivoted Space; save `baselines_pivoted.csv` | **Full GRPO run:** 50 iters × K=4 × Task 1 on L4 (~1.5h compute); monitor reward + loss curves in W&B; checkpoint adapter every 10 iters |
+| H 21-22 | Pre-submit cleanup: move `STRATEGIC_SUMMARY.md`, `META_HACKATHON_ANALYSIS.md`, `ROUND1_COMPLIANCE_CHECKLIST.md`, `FIXES_APPLIED.md`, `LLM_JUDGE_STRATEGY.md`, `MATHEMATICAL_FOUNDATION.md`, `farming_realism_analysis.md` to `Planning/archive/`; delete `main.py` + `honey_app.py`; PR `a/cleanup` | While training finishes: scaffold `scripts/make_plots.py` (5 matplotlib plots from W&B run history); draft README outline using §9 story arc |
+| **H 22** | **HANDOFF #4:** B's training run completes. Adapter saved locally. Both pull main. | |
+| H 22-24 | Pull main; with the trained adapter present, re-run `robustness_validation.py` adding the "0.5B trained" tier; produce skill-gradient summary (random < heuristic < 72B zero-shot < 0.5B trained) | **Evidence harvest:** generate 5 PNGs in `assets/` — `reward_curve.png`, `loss_curve.png`, `baseline_comparison.png` (5 bars on **same axes**), `action_shift.png`, `trajectory_diff.png`; commit |
+| H 24-25 | Hand A's robustness summary + annotated observation example + action JSON sample to B for README inclusion; run `verify_all.py` final pass | `huggingface_hub.upload_folder()` → push LoRA adapter to `<team>/farm-grpo-qwen0.5b-task1`; add Hub model card with usage snippet pointing back to FarmSim env |
+| H 25-27 | Review B's README draft with focus on env description accuracy, physics claims, and reward design paragraph; commit minor wording edits via PR comments only | **Full README rewrite** (replace 193-byte stub): hero block with Theme #2 + #3.1 tags + verbatim narrative reframe; problem; environment with annotated screenshot; Reward design paragraph from §21.3; Training section; Results with all 5 plots embedded; Try-it-yourself; Future work citing PRMs/PBRS/BiPaRS/RUNE/IRD per §21 |
+| H 27-29 | Test the Colab notebook **on a fresh runtime** end-to-end (one full re-run); verify no ImportError, NameError, or runtime crash; if broken — page B immediately | Record <2:00 video (OBS/Loom screen capture + pre-written VO); upload unlisted to YouTube; add link to README hero (NOT committed as file). HF blog post fallback if video overruns 1.5h |
+| H 29-30 | Final engineering pass: `validate-submission.sh` + `openenv validate` + `verify_all.py` against live Space; sign off on §15 engineering checklist | Final story pass: confirm all 5 plots embed inline on GitHub, all cross-links resolve (Space, Hub, Colab, video). Submit GitHub URL to hackathon portal |
+
+### Hard rules
+
+- **Both rebase on `main` at the start of every Claude Code session** (`git fetch origin && git checkout main && git pull --ff-only && git checkout <my-branch> && git rebase main`).
+- HANDOFF rows = mandatory PR merge + rebase. Don't proceed past a HANDOFF until both branches are synced.
 - If anything in Block A overruns by >2h, drop pivot scope to journal-only (cut market gossip + neighbor email noise) and proceed.
 - Block B cannot start late.
 - Sleep block is non-negotiable; if behind schedule, cut video polish before cutting sleep.
+- Status pings every hour in the team channel — silence is a smell.
+
+### Critical-path dependencies
+
+```
+A: WS1 ──> WS2 ──> WS3 ──> redeploy ──> robustness ──> README review ──> final eng checklist
+                              │                            ▲
+                              ▼                            │
+B: notebook scaffold ──> smoke ──> SLEEP ──> full train ──> evidence ──> Hub push ──> README ──> video ──> submit
+```
+
+A's WS1+WS2+WS3 must merge before B's smoke can run on real env (H 9). B's training must finish before A's final robustness re-run (H 22). All other work is parallelizable.
 
 ---
 
-## 5. Workstream 1 — Refactor Observation Space (Hours 1-5) — closes B1
+## 5. Workstream 1 — Refactor Observation Space (Hours 1-5) — closes B1 — **Owner: Person A**
 
 **v2 §1 mandate:** *"Kill the clean arrays. The environment must be partially observable through natural language."*
 
@@ -140,7 +169,7 @@ python inference.py         # confirm LLM still parses on Task 1 with narrative_
 
 ---
 
-## 6. Workstream 2 — Harden the Economy (Hours 5-7) — closes B2 & B3
+## 6. Workstream 2 — Harden the Economy (Hours 5-7) — closes B2 & B3 — **Owner: Person A**
 
 **v2 §2 + §3 mandate:** *"Resource Friction. Market Impact. Dynamic Volatility. Sunk Cost Fallacy."*
 
@@ -208,7 +237,7 @@ If skill gradient inverts on the new env, the noise injection or slippage is too
 
 ---
 
-## 7. Workstream 3 — Composable RubricComposer (Hours 7-9)
+## 7. Workstream 3 — Composable RubricComposer (Hours 7-9) — **Owner: Person A**
 
 **Judging criteria mandate:** *"Uses OpenEnv's Rubric system thoughtfully (composable rubrics > monolithic scoring)."*
 
@@ -274,7 +303,7 @@ The dimension breakdown becomes a free **spider/radar chart** for the README —
 
 ---
 
-## 8. Workstream 4 — Unsloth + TRL GRPO Training (Hours 10-24) — closes B4 & B7
+## 8. Workstream 4 — Unsloth + TRL GRPO Training (Hours 10-24) — closes B4 & B7 — **Owner: Person B** (env-side support: Person A)
 
 ### Why Unsloth + TRL specifically
 
@@ -338,7 +367,7 @@ Final adapter only. One `huggingface_hub.upload_folder` call. Repo: `<team-usern
 
 ---
 
-## 9. Workstream 5 — Storytelling & Submission (Hours 21-30, mostly serial)
+## 9. Workstream 5 — Storytelling & Submission (Hours 21-30) — **Owner: Person B** (review + engineering sign-off: Person A)
 
 ### README rewrite (H 25-27)
 
@@ -659,6 +688,27 @@ Notebook must run end-to-end on a fresh Colab runtime. Test once at H 28-29.
 ## 19. Two-Person Claude Code Collaboration Workflow
 
 Goal: two team members on separate PCs, each running Claude Code, ship the 30-hour plan together without merge conflicts, broken `main`, or duplicated work.
+
+> **The full hour-by-hour parallel timeline is in §4.** This section is the operational playbook (branches, merge rules, ownership matrix, comms protocol). Read §4 for "what to do at hour H"; read this section for "how to do it without breaking each other."
+
+### Quick "who-runs-which-command" reference
+
+| Command / action | Person A | Person B |
+|---|---|---|
+| `git push` to `server/`, `models.py`, `inference.py`, `openenv.yaml` | ✅ | ❌ |
+| `git push` to `notebooks/`, `assets/`, `README.md` | ❌ | ✅ |
+| `git push` to `tasks.py`, `verify_*.py`, `test_phase*.py` | ✅ | ❌ |
+| `git push` to `train.py` | ❌ | ✅ (or delete) |
+| Run `validate-submission.sh` | ✅ (primary) | ✅ (sanity check at H 29) |
+| Run `verify_all.py` / `verify_economics.py` / `verify_actions.py` | ✅ | ❌ |
+| Run `robustness_validation.py` | ✅ | ❌ |
+| Deploy/redeploy HF Space (env container) | ✅ | ❌ |
+| Spin up dedicated L4 Space for training | ❌ | ✅ |
+| `huggingface_hub.upload_folder()` (push adapter to Hub) | ❌ | ✅ |
+| Trigger Colab training run | ❌ | ✅ |
+| Record video / write blog post | ❌ | ✅ |
+| Submit final URL to hackathon portal | ❌ | ✅ (with A's engineering sign-off) |
+| Update `STATUS.md` | ✅ + ✅ (both, hourly) | ✅ + ✅ |
 
 ### 19.1 Roles & ownership (lock at H 0)
 
