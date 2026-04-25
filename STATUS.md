@@ -2,9 +2,9 @@
 
 ## Person A — Ashdeep
 - Branch: a/ws1
-- In progress: WS1.1 narrative observation layer scaffold
-- Blocked on: nothing
-- Next: WS1.2 narrative content (4 components)
+- DONE: WS1.1 narrative observation layer (green verification)
+- DONE: WS1.2 narrative content (4 components: weather, market, logs, gossip)
+- Next: WS1.3 Robustness Validation & Audit Utils
 
 ## Person B — Vivek
 - Branch: b/ws4-notebook
