@@ -208,6 +208,22 @@ price_drop = min(50%, qty / 10kg × 1%)   # permanent impact
 
 ---
 
+## 🧠 Deep RL Research Grounding (GRPO + Reward Engineering)
+
+FarmSimulation goes beyond a simple physics engine by deeply integrating techniques from recent reinforcement learning literature to solve complex, multi-objective environments. Our RL baseline specifically implements **Group Relative Policy Optimization (GRPO)** (from the DeepSeekMath/R1 papers) equipped with the following reward engineering techniques:
+
+| Technique | Implementation in FarmSimulation | Source Inspiration |
+|---|---|---|
+| **Hybrid Multi-Objective Reward** | 5-function reward list combining Execution, Similarity, and Preferences. | Execution + Similarity + Preference (Literature) |
+| **Execution-Based Rewards** | The core deterministic environment acts as the absolute, verifiable "oracle" for the task. | Program Synthesis/Compiler verification patterns |
+| **Similarity-Based Rewards** | `heuristic_similarity_reward`: Soft-guides agents using normalized edit-distance against a hardcoded heuristic expert. | CodeBLEU / AST-matching analogs |
+| **Curriculum Schedules** | Progressive task scaling: Easy (30d) → Medium (45d + rotation) → Hard (60d + droughts + spoilage). | Learning to execute (Literature) |
+| **Gated Thinking Rewards** | Binary competence gate: if `net_worth` drops, all other dimension scores collapse to zero (preventing reward hacking). | DeepSeek-R1 (rewarding reasoning only if correct) |
+
+*Future Work pipeline (Round 3)*: Process Reward Models (PRMs), Potential-Based Reward Shaping (PBRS), and Exploration-Guided Reward Shaping (EXPLORS).
+
+---
+
 ## 🏆 Reward Table
 
 | Event | Reward | Notes |
