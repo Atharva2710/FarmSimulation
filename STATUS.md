@@ -1,11 +1,13 @@
-# Live Status (last updated H+1 by B)
+# Live Status (last updated H+2 by A)
 
 ## Person A — Ashdeep
-- Branch: a/ws1
+- Branch: a/ws2
 - DONE: WS1.1 narrative observation layer (green verification)
 - DONE: WS1.2 narrative content (4 components: weather, market, logs, gossip)
 - DONE: WS1.3 Robustness validation (skill gradient PASSED) + audit verify fix + MCP name check
-- Next: HANDOFF #1 → merge a/ws1 → main, then WS2 (economy hardening)
+- HANDOFF #1: merged to main ✅
+- IN PROGRESS: WS2 economy hardening (patience cap, Almgren-Chriss slippage, binary competence gate)
+- Next: HANDOFF #2 → merge a/ws2 → main
 
 ## Person B — Vivek
 - Branch: b/ws4-notebook (rebased on main HEAD `0c701e1`)
