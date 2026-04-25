@@ -8,8 +8,10 @@
 - HANDOFF #1: merged to main ✅
 - DONE: WS2 economy hardening (patience cap, Almgren-Chriss slippage, binary competence gate)
 - DONE: WS3 RubricComposer (Dimension/Gate/RubricComposer classes, 3 per-task rubrics, grade_episode_detailed(), openenv.yaml composite grader blocks)
-- HANDOFF #2 pending: need a/ws2 + a/ws3 PR merged → main
-- Next: HANDOFF #2+#3 → then re-baseline pivoted env
+- HANDOFF #2+#3: merged to main ✅
+- DONE: Re-baseline pivoted env (baseline_results_pivoted.json) — reward gradient: random -46/heuristic +38 on Task 1
+- DONE: Pre-submit cleanup — meta-docs → Planning/archive/, deleted main.py + honey_app.py
+- Next (Block B): HF Space redeploy → 72B zero-shot baseline → robustness re-run with trained adapter
 
 ## Person B — Vivek
 - Branch: b/ws4-notebook (rebased on main HEAD `0c701e1`)
