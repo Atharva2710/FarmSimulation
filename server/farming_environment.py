@@ -114,6 +114,8 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
 
         # WS2: consecutive days the agent chose "wait" (patience-farm exploit cap)
         self._consecutive_wait_days: int       = 0
+        # Layer 3: deferred journal bonus (set by write_journal, consumed by next productive action)
+        self._pending_journal_bonus: float     = 0.0
 
         # Auto-initialize so the env works even without explicit reset()
         self.reset()
@@ -208,6 +210,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         self._withered_plots      = set()
         self._journal             = []
         self._consecutive_wait_days = 0
+        self._pending_journal_bonus: float = 0.0  # Layer 3: deferred until next productive action
 
 
         # Initialize weather for Day 0
@@ -307,7 +310,20 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         if act != "wait":
             self._consecutive_wait_days = 0
 
+        # Layer 3: resolve pending journal bonus before this action's reward
+        _PRODUCTIVE_ACTIONS = {
+            "buy_seeds", "plant", "irrigate", "harvest", "sell",
+            "pump_water", "apply_fertilizer", "spray_pesticide",
+            "pull_weeds", "buy_plot", "clear", "end_day",
+        }
+        journal_gate_bonus = 0.0
+        if self._pending_journal_bonus > 0.0:
+            if act in _PRODUCTIVE_ACTIONS:
+                journal_gate_bonus = self._pending_journal_bonus
+            self._pending_journal_bonus = 0.0  # consume either way
+
         reward = self._execute_action(act, action)
+        reward += journal_gate_bonus
         self._action_message = shift_msg + self._action_message
 
         # Check for auto-termination (no money or day limit reached)
@@ -634,20 +650,19 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         return 0.1
             
     def _handle_write_journal(self, action: FarmAction) -> float:
-        """Stores a journal entry in memory; used by _render_narrative_observation."""
+        """Stores a journal entry; Layer 3 bonus is deferred until next productive action."""
         entry = action.journal_entry
         if not entry or not isinstance(entry, str):
             return -0.1  # penalize empty journals
-        
-        # Max length check
+
         entry = entry[:200]
         self._journal.append(f"Day {self._day}: {entry}")
-        
-        # Keep last 10 entries
         if len(self._journal) > 10:
             self._journal.pop(0)
-            
-        return 0.1  # small reward for documenting state
+
+        # Layer 3: don't pay out now — gate on next productive action
+        self._pending_journal_bonus = 0.1
+        return 0.0
 
 
         # reset plot
