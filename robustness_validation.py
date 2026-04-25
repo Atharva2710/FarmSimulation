@@ -147,14 +147,15 @@ def check_market_dynamics():
     env._storage["wheat"] = 100.0
     mid_price = env._market_prices["wheat"].sell_price
     
-    # 1. Check Temporary Impact (Slippage)
-    # 100kg sell should have 5% slippage
-    # P_exec = mid * (1 - 0.05)
+    # 1. Check Temporary Impact (Almgren-Chriss slippage)
+    # WS2: slippage_pct = 0.005 * (qty/10)^1.5 capped at 30%
+    # 100kg: 0.005 * 10^1.5 ≈ 15.8% → P_exec = mid * (1 - 0.158)
     obs = env.step({"action_type": "sell", "seed_type": "wheat", "quantity": 100})
-    
+
     sell_event = env._sell_events[-1]
     execution_price = sell_event["price"]
-    expected_exec = mid_price * 0.95
+    slippage = min(0.005 * (100 / 10.0) ** 1.5, 0.30)
+    expected_exec = mid_price * (1.0 - slippage)
     
     if abs(execution_price - expected_exec) > 0.01:
         print(f"  ❌ Temporary Impact FAILED: Exec {execution_price:.4f} != Expected {expected_exec:.4f}")

@@ -34,6 +34,11 @@ def grade_task1(record: EpisodeRecord) -> float:
         return 0.01
 
     net_worth = record.final_money + record.storage_value
+
+    # WS2 FIX 4: binary competence gate — bankrupt agent scores floor regardless
+    if net_worth < record.initial_money:
+        return 0.01
+
     ratio     = net_worth / (record.initial_money * 2.0)
     score     = min(0.99, max(0.01, ratio))
 
@@ -53,6 +58,11 @@ def grade_task2(record: EpisodeRecord) -> float:
 
     # profit component
     net_worth     = record.final_money + record.storage_value
+
+    # WS2 FIX 4: binary competence gate
+    if net_worth < record.initial_money:
+        return 0.01
+
     profit_ratio  = net_worth / (record.initial_money * 2.5)
     profit_score  = min(0.99, max(0.01, profit_ratio))
 
@@ -91,6 +101,11 @@ def grade_task3(record: EpisodeRecord) -> float:
 
     # profit component — target is 3× starting money (hard to achieve with drought)
     net_worth    = record.final_money + record.storage_value
+
+    # WS2 FIX 4: binary competence gate
+    if net_worth < record.initial_money:
+        return 0.01
+
     profit_ratio = net_worth / (record.initial_money * 3.0)
     profit_score = min(0.99, max(0.01, profit_ratio))
 
