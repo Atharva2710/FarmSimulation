@@ -118,7 +118,7 @@ PLOT_BASE_COST:       float  = 100.0   # cost to purchase a new plot
 # ── Action / Observation / State ─────────────────────────────────────────────
 
 class FarmAction(Action):
-    action_type:   str           = Field(..., description="buy_seeds/plant/irrigate/harvest/sell/wait/pump_water/apply_fertilizer/spray_pesticide/pull_weeds/buy_plot/end_day")
+    action_type:   str           = Field(..., description="buy_seeds/plant/irrigate/harvest/sell/wait/pump_water/apply_fertilizer/spray_pesticide/pull_weeds/buy_plot/end_day/write_journal")
     plot_id:       Optional[int] = Field(None, ge=0, le=99, description="required for plot interactions")
     seed_type:     Optional[str] = Field(None, description="required for buy_seeds and plant")
     quantity:      Optional[int] = Field(None, gt=0, description="seeds to buy or kg to sell")

@@ -64,10 +64,15 @@ SYSTEM_PROMPT = textwrap.dedent("""
     - MARKET AUDIT: Is current price at a 7-day peak?
     - ACTION: Prioritize EXPANSION if survival is secure.
     
+    MEMORY ACTION — write_journal (costs only 0.1h labor):
+    Use once per day to record your reasoning. Your entry appears in the next
+    observation under "--- FARMER'S LOG --- / Recent notes:" so you can track
+    decisions across days. Good entries: crop planted, price trend noted, plan.
+
     OUTPUT FORMAT (Strict JSON):
     {
       "fidelity_audit": {"runway_days": float, "net_worth": float, "is_peak": bool},
-      "action": {"action_type": "...", "plot_id": 0-3, "seed_type": "...", "quantity": 1},
+      "action": {"action_type": "...", "plot_id": 0-3, "seed_type": "...", "quantity": 1, "journal_entry": "optional — include only for write_journal"},
       "thought": "Deep audit of Runway, 7-day Price Delta, and Growth ROI."
     }
 """).strip()
