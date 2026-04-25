@@ -271,8 +271,21 @@
     "grade_placeholder": {
       "random": 0.01,
       "heuristic": 0.01,
-      "zero_shot_72B": "TBD (Block B)",
-      "grpo_trained": "TBD (Block B)"
+      "zero_shot_72B": 0.01,
+      "grpo_trained": "TBD — awaiting Gen 2 (HANDOFF #5)"
     }
+  },
+  "zero_shot_72B": {
+    "model": "Qwen/Qwen2.5-72B-Instruct",
+    "date": "2026-04-25",
+    "env_url": "https://athric-farmsim.hf.space",
+    "task_1": {
+      "grade": 0.01,
+      "total_reward": 0.3,
+      "steps": 30,
+      "final_money": 200.0,
+      "behavior": "wait-spam — model chose to wait every step, citing 'gathering market information before planting'. Same local optimum as Gen 1 GRPO."
+    },
+    "note": "Even Qwen 72B zero-shot discovered the wait-spam local optimum. Validates that GRPO training on this specific env is necessary — model size alone does not produce correct farming behavior."
   }
 }
