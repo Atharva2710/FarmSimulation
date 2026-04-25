@@ -509,6 +509,15 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         self._seed_inventory[seed] += qty
         return 0.0   # neutral — reward comes when seeds are used well
 
+    def _phase_weights(self) -> tuple:
+        """PBRS: returns (setup, growth, harvest) weights for current episode phase.
+        setup peaks at episode start, growth peaks at midpoint, harvest at end."""
+        t = self._day / max(self._max_days, 1)
+        setup   = max(0.0, 1.0 - t / 0.3)
+        growth  = max(0.1, math.sin(math.pi * t))
+        harvest = max(0.0, (t - 0.7) / 0.3)
+        return setup, growth, harvest
+
     def _handle_plant(self, action: FarmAction) -> float:
         if action.plot_id is None or not (0 <= action.plot_id < len(self._plots)):
             return -1.0
@@ -533,13 +542,14 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         plot.days_critical  = 0
         plot.health         = 1.0
         plot.yield_estimate = SEED_CONFIG[seed]["yield_kg"]
-        # Reset pests/weeds on plant? Usually clearing resets them, but let's be sure
         plot.has_weeds      = False
         plot.has_pests      = False
         plot.pest_severity  = 0.0
         plot.pesticide_protection = 0
 
-        return 0.2   # small positive: agent committed to a plan
+        # PBRS Layer 1: planting is more valuable during setup phase
+        setup, _, _ = self._phase_weights()
+        return round(0.2 * (1.0 + setup), 4)
 
     def _handle_irrigate(self, action: FarmAction) -> float:
         # ... logic ...
@@ -702,9 +712,17 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
         self._market_impact[crop] = max(0.5, self._market_impact[crop])
 
         # reward scales with revenue relative to base price
-        base_revenue    = SEED_CONFIG[crop]["base_sell"] * qty
-        price_premium   = (revenue - base_revenue) / max(base_revenue, 1.0)
-        reward          = 0.3 + price_premium * 0.5
+        base_revenue  = SEED_CONFIG[crop]["base_sell"] * qty
+        price_premium = (revenue - base_revenue) / max(base_revenue, 1.0)
+        reward        = 0.3 + price_premium * 0.5
+
+        # PBRS Layer 2: market-adaptive timing multiplier (reward signal only — money unchanged)
+        # Selling above 7-day avg scales reward up to 1.4×; below avg scales down to 0.7×
+        avg_7d = self._market_prices[crop].avg_7d
+        if avg_7d > 0 and len(self._price_history.get(crop, [])) >= 3:
+            premium_ratio  = (execution_price - avg_7d) / max(avg_7d, 0.01)
+            timing_factor  = 1.0 + max(-0.3, min(0.4, premium_ratio))
+            reward         = round(reward * timing_factor, 4)
         
         self._sell_events.append({
             "day":        self._day,
@@ -840,8 +858,9 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
             return round(-0.3 * mature_plots, 4)
 
         if active_plots > 0 and idle_empty_plots == 0:
-            # crops growing, nothing else to do — smart patience (capped after 2+ consecutive waits)
-            return round(0.05 * active_plots * passive_multiplier, 4)
+            # PBRS Layer 1: patience only valuable during growth phase, not at harvest time
+            _, growth, _ = self._phase_weights()
+            return round(0.05 * active_plots * growth * passive_multiplier, 4)
 
         if idle_empty_plots > 0:
             # has seeds and empty plots but not planting
@@ -856,14 +875,18 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
 
     def _daily_passive_reward(self) -> float:
         reward = 0.0
-        
+
         # Scale passive rewards by difficulty (easier = more forgiving)
-        reward_scale = {1: 0.15, 2: 0.12, 3: 0.10}  # easy/medium/hard
+        reward_scale = {1: 0.15, 2: 0.12, 3: 0.10}
         daily_bonus = reward_scale.get(self.task_id, 0.1)
-        
+
+        # PBRS Layer 1: passive reward weighted by growth phase
+        # Near-zero at episode start (plant, don't coast) and end (harvest, don't coast)
+        _, growth, _ = self._phase_weights()
+
         for plot in self._plots:
             if plot.stage in ("seedling", "growing", "mature"):
-                reward += daily_bonus * plot.health   # scaled by difficulty
+                reward += daily_bonus * plot.health * growth
         return round(reward, 4)
 
     def _post_advance_penalties(self) -> float:
