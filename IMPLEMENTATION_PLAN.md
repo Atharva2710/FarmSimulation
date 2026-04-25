@@ -798,7 +798,379 @@ Any drift from these = the plan slips. Discipline carries this project.
 
 ---
 
-## 20. Bottom Line
+## 20. RL Engineering Deep-Dive (from Unsloth GRPO docs)
+
+This section translates Unsloth's official GRPO/RL guide into FarmSim-specific engineering decisions. Source: `unsloth.ai/docs/get-started/reinforcement-learning-rl-guide` and `unsloth.ai/docs/models/gpt-oss-reinforcement-learning`. Read this section before writing a single line of `train_grpo_unsloth.ipynb`.
+
+### 20.1 Reward decomposition — list of reward functions, NOT one monolithic fn
+
+**Critical insight from the Unsloth + GPT-OSS RL tutorials:** TRL's `GRPOTrainer` accepts `reward_funcs` as a **list**. Each function is called per generation; total reward = **sum** of all functions. The official GPT-OSS example uses `reward_funcs=[function_works, no_cheating, strategy_succeeds]`.
+
+This is the right pattern for FarmSim. Decompose into 5 reward functions instead of one giant `reward_fn`:
+
+```python
+def task_completion_reward(completions, **kwargs) -> list[float]:
+    """Final episode profit / target_profit, clamped [0, 2]."""
+    return [run_episode(c)["grade"] * 2.0 for c in completions]
+
+def format_reward(completions, **kwargs) -> list[float]:
+    """+0.3 for valid JSON action on every step, else 0."""
+    return [0.3 if all_steps_parse(c) else 0.0 for c in completions]
+
+def no_invalid_action_reward(completions, **kwargs) -> list[float]:
+    """-0.5 per invalid action attempt (caught by env)."""
+    return [-0.5 * count_invalid(c) for c in completions]
+
+def anti_exploit_reward(completions, **kwargs) -> list[float]:
+    """-1.0 if action distribution is >60% irrigate or >60% wait (cheating signature)."""
+    return [-1.0 if exploit_pattern(c) else 0.0 for c in completions]
+
+def stewardship_reward(completions, **kwargs) -> list[float]:
+    """+0.5 × healthy_day_fraction (rewards keeping plots alive)."""
+    return [0.5 * healthy_fraction(c) for c in completions]
+
+trainer = GRPOTrainer(
+    model=model,
+    processing_class=tokenizer,
+    reward_funcs=[
+        task_completion_reward,    # primary (the anchor)
+        format_reward,              # cheap shaping signal
+        no_invalid_action_reward,   # discourage invalid actions
+        anti_exploit_reward,        # close v2 spam-water/HFT exploits
+        stewardship_reward,         # multi-objective
+    ],
+    args=training_args,
+    train_dataset=prompt_dataset,
+)
+```
+
+**Why this matters:**
+- Unsloth logs each reward function separately in W&B → judges see a per-component breakdown automatically. Free storytelling.
+- Maps 1:1 to the RubricComposer dimensions in §7 (profit / format / efficiency / anti-exploit / stewardship).
+- v2's "spam-water" and "HFT" exploits get their own dedicated `anti_exploit_reward` fn that judges can name-check.
+
+**Reward-function signature (locked):**
+```python
+def reward_fn(prompts, completions, **kwargs) -> list[float]: ...
+```
+- `prompts`: list of message dicts (the initial farm-state prompt per group member)
+- `completions`: list of `[{"role":"assistant","content":"..."}]` — one per group member
+- `**kwargs`: any extra dataset columns (use this to pass `task_id`, `seed`, `noise_seed`)
+- Return: `list[float]`, one scalar per completion. Unsloth handles group-relative normalization internally.
+
+### 20.2 GRPO hyperparameter map (FarmSim-locked values)
+
+Pulled from Unsloth's `tutorial-train-your-own-reasoning-model-with-grpo` and `advanced-rl-documentation`, adapted for our env:
+
+```python
+from trl import GRPOConfig
+
+training_args = GRPOConfig(
+    # === Generation ===
+    temperature=1.0,                    # NOT 0.7 — GRPO needs exploration
+    max_prompt_length=1024,             # narrative_text + system + history fits
+    max_completion_length=80,           # JSON action only
+    num_generations=4,                  # group size K; drop to 2 if T4 OOMs
+
+    # === Optimizer ===
+    learning_rate=5e-6,                 # Unsloth's tutorial default; 5e-5 too high for 0.5B
+    optim="adamw_8bit",                 # 8-bit Adam saves ~25% VRAM on T4
+    adam_beta1=0.9,
+    adam_beta2=0.99,
+    weight_decay=0.1,                   # strong regularization for small model
+    warmup_ratio=0.1,
+    lr_scheduler_type="cosine",
+    max_grad_norm=0.1,                  # tight clipping — GRPO stability requires this
+
+    # === Batching ===
+    per_device_train_batch_size=1,
+    gradient_accumulation_steps=4,      # smoother reward signal vs default 1
+    max_steps=50,                       # ≈ 50 GRPO updates; one episode per group per step
+
+    # === GRPO algorithm ===
+    beta=0.0,                           # 0.0 = no reference model loaded → saves VRAM + 30% speed
+                                        # bump to 0.04 if policy starts drifting
+    epsilon=0.2,                        # standard PPO clip
+    epsilon_high=0.28,                  # DAPO upper bound (Unsloth recommends)
+    loss_type="dapo",                   # DAPO loss > vanilla grpo on small models
+    mask_truncated_completions=True,    # don't penalize when env episode hits step cap
+    importance_sampling_level="token",  # token-level (default; sequence is for reasoning models)
+
+    # === Logging & checkpointing ===
+    logging_steps=1,                    # log every step → dense reward curve
+    save_steps=10,                      # adapter checkpoint every 10 steps
+    output_dir="grpo_farm_qwen_0_5b",
+    report_to="wandb",                  # → reward curve auto-uploaded
+)
+```
+
+**Key callouts from Unsloth docs:**
+- `beta=0.0` removes the reference model entirely. **Saves ~30% VRAM and 30% speed.** Only enable (set to 0.04) if smoke run shows policy collapse.
+- `loss_type="dapo"` is the newer DAPO-paper loss — Unsloth's docs cite it as more stable for small models. Defaults to `"bnpo"` if not specified.
+- `epsilon_high=0.28` (DAPO recommendation) widens the upper clip and helps when reward signal is sparse.
+- `max_grad_norm=0.1` is **much tighter** than typical SFT (1.0). GRPO gradients are spiky; this prevents collapse.
+- `gradient_accumulation_steps=4` simulates larger batch without VRAM cost — Unsloth's tutorials repeatedly recommend bumping from 1 to 4 for "smoother training."
+
+### 20.3 Unsloth model loading — vLLM fast_inference + grad checkpointing
+
+Generation cost dominates GRPO wall-clock (~80% of step time). Two Unsloth flags slash this:
+
+```python
+from unsloth import FastLanguageModel
+
+model, tokenizer = FastLanguageModel.from_pretrained(
+    model_name="unsloth/Qwen2.5-0.5B-Instruct-bnb-4bit",
+    max_seq_length=1104,                # = max_prompt_length + max_completion_length
+    load_in_4bit=True,                  # 4-bit base, LoRA stays bf16
+    fast_inference=True,                # vLLM backend → ~10× faster generation
+    max_lora_rank=16,
+    gpu_memory_utilization=0.7,         # leave 30% for activations + KV cache
+)
+
+model = FastLanguageModel.get_peft_model(
+    model,
+    r=16,
+    lora_alpha=32,                      # alpha = 2 × r is Unsloth's default rule
+    lora_dropout=0.05,
+    target_modules=[
+        "q_proj","k_proj","v_proj","o_proj",
+        "gate_proj","up_proj","down_proj",
+    ],
+    use_gradient_checkpointing="unsloth",   # NOT True/False — the string "unsloth" enables their custom impl
+    random_state=3407,
+)
+```
+
+**Three flags worth understanding:**
+1. `fast_inference=True` — Unsloth swaps in vLLM for the rollout phase. ~10× generation speedup. Only available when `load_in_4bit=True`. **Use this.**
+2. `use_gradient_checkpointing="unsloth"` — string, not bool. Unsloth's custom checkpointing impl saves 30% more VRAM than HF's `True`. Worth ~30% longer max-seq-length.
+3. `gpu_memory_utilization=0.7` — vLLM grabs 70% of VRAM upfront for KV cache. Drop to 0.5 if OOM during rollout.
+
+### 20.4 Multi-turn rollout adapter (FarmSim-specific)
+
+TRL's `GRPOTrainer` is single-turn by default: one prompt → K completions → K rewards → update. FarmSim is multi-turn (30-60 steps per episode). Two viable patterns; we use **Pattern B**:
+
+**Pattern A — Episode-as-completion (rejected):** concat all 30 actions into one giant completion. Loses per-step diversity in the group; group_size=4 → only 4 trajectories explored per step. Bad for GRPO advantage estimation.
+
+**Pattern B — Reward-fn-as-rollout (chosen):** the "completion" is just the first action; the reward function rolls out the rest of the episode internally and returns final episode reward. Each generation creates an independent rollout via the same model.
+
+```python
+def task_completion_reward(prompts, completions, **kwargs):
+    rewards = []
+    for prompt, completion in zip(prompts, completions):
+        first_action = parse_action(completion[0]["content"])
+        env = FarmEnvClient(SPACE_URL)
+        obs = env.reset(task_id=kwargs.get("task_id", 1),
+                        noise_seed=kwargs.get("noise_seed", 42))
+        total_reward = 0.0
+        # apply the GRPO-sampled first action
+        obs, r, done, _ = env.step(first_action); total_reward += r
+        # roll the rest with greedy model.generate (NOT GRPO-sampled)
+        while not done:
+            action_text = model_generate_greedy(obs.narrative_text)
+            action = parse_action(action_text)
+            obs, r, done, _ = env.step(action); total_reward += r
+        rewards.append(total_reward)
+    return rewards
+```
+
+**Why this works:** GRPO only needs *gradient* on the first action's tokens. The rest of the episode just gives us a final reward signal. As training progresses, the policy improves first-action quality, which compounds across the episode.
+
+**Trade-off:** less efficient than full-trajectory PPO (we only update on the first step), but matches TRL's single-turn API and avoids rewriting `GRPOTrainer`. Acceptable for a 30h sprint.
+
+**If we have spare time after H 24:** swap to a "step-as-completion" pattern where each row in `train_dataset` is `(state_at_step_t, history_so_far)` and we collect ~1000 such (state, action) pairs per epoch. This gives per-step gradient. Defer unless the basic Pattern B converges and we have buffer.
+
+### 20.5 Loss type & two-sided clipping (don't ship the default)
+
+Unsloth's advanced docs list four `loss_type` options:
+- `"bnpo"` — basic, default. Works but plateaus on small models.
+- `"grpo"` — original DeepSeek-R1 formulation.
+- `"dr_grpo"` — Dr. GRPO, simplified.
+- `"dapo"` — newer, two-sided clipping per the DAPO paper. **Recommended for FarmSim.**
+
+Use:
+```python
+loss_type="dapo",
+epsilon=0.2,
+epsilon_high=0.28,
+delta=1.5,                           # enables two-sided clipping (INTELLECT-2 paper)
+mask_truncated_completions=True,
+```
+
+Two-sided clipping (`delta` set + `epsilon_high` distinct) is the single biggest stability win over default GRPO. Worth the 5 lines.
+
+### 20.6 Common pitfalls (from Unsloth's RL guide)
+
+1. **Reward variance collapse.** If all K=4 generations get identical reward, GRPO advantages are all zero → no gradient. Symptoms: flat loss, no movement after iter 5. **Fix:** raise `temperature` from 1.0 to 1.2; if still flat, K=4 → K=8; if still flat, the reward function isn't discriminating (your reward landscape is too flat — add per-step shaping signals).
+
+2. **Reward hacking via format gaming.** If `format_reward` is too high relative to `task_completion_reward`, the model spams perfectly-formatted no-ops. **Fix:** keep format reward ≤ 30% of task reward magnitude. Rule of thumb: `max(format_reward) ≤ 0.3 × max(task_completion_reward)`.
+
+3. **Truncated completions counted as failures.** If `mask_truncated_completions=False` (default), a generation that hits `max_completion_length` gets a 0 reward even if it would've been correct. **Fix:** always set `mask_truncated_completions=True`.
+
+4. **vLLM cache OOM on group_size bump.** `num_generations=8` on T4 OOMs because vLLM allocates K parallel sequences. **Fix:** drop `gpu_memory_utilization` to 0.5, or stay at K=4.
+
+5. **8-bit optimizer × LoRA mismatch.** Some `bitsandbytes` versions don't play with `optim="adamw_8bit"` + LoRA. **Fix:** if you see `RuntimeError: Tensor is not contiguous` during optimizer.step, fall back to `optim="adamw_torch"` (slightly more VRAM but stable).
+
+6. **`processing_class` vs `tokenizer` arg name.** TRL ≥0.11 renamed `tokenizer=tokenizer` to `processing_class=tokenizer` in `GRPOTrainer.__init__`. **Use `processing_class=tokenizer`** to match Unsloth's current docs.
+
+7. **`apply_chat_template` mismatch.** GRPO operates on chat-formatted prompts. Run prompts through `tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)` BEFORE feeding to the dataset. Skipping this means the model sees raw `[{"role":"user"...}]` strings and never learns.
+
+### 20.7 Final notebook cell-list (locked)
+
+`notebooks/train_grpo_unsloth.ipynb` — 13 cells:
+
+1. `!pip install -U unsloth trl==0.11.4 huggingface_hub openenv-core wandb` (one-shot)
+2. `huggingface_hub.login()` + `wandb.login()`
+3. `FastLanguageModel.from_pretrained(...)` with `fast_inference=True, load_in_4bit=True`
+4. `FastLanguageModel.get_peft_model(...)` with `use_gradient_checkpointing="unsloth"`
+5. Define `FarmEnvClient` HTTP client (copy from `train.py:124-153`)
+6. Define `parse_action()` helper (lift from `inference.py`)
+7. Define the **5 reward functions** (§20.1)
+8. Build `prompt_dataset`: 200 rows of (system_prompt, narrative_observation_at_day_0) — sample initial states with different `noise_seed`s
+9. `GRPOConfig(...)` — locked hyperparameters from §20.2
+10. `GRPOTrainer(model=model, processing_class=tokenizer, reward_funcs=[...], args=config, train_dataset=...)` + `trainer.train()`
+11. Plot generation: load `trainer.state.log_history` → save 4 PNGs to `assets/`
+12. `model.save_pretrained_merged(...)` then `huggingface_hub.upload_folder(...)` to push adapter
+13. Final cell: print reproducibility metadata (`torch.__version__`, `unsloth.__version__`, `trl.__version__`, all seeds, Hub URL, W&B URL)
+
+Test the notebook end-to-end on a fresh Colab runtime at H 28-29. Judges will rerun cell-by-cell — any ImportError or NameError disqualifies the submission from the 10% pipeline axis.
+
+### 20.8 What this changes in earlier sections
+
+The plan's earlier hyperparameters (§8) are now **superseded** by §20.2. Specifically:
+- `lr` 5e-5 → **5e-6** (Unsloth's tutorial value; 5e-5 was too aggressive for 0.5B + GRPO).
+- `kl_coef` 0.05 → **`beta=0.0`** (no reference model — saves 30% VRAM/speed; fall back to 0.04 only if drift).
+- `max_steps` is now 50 GRPO updates, NOT 50 env iterations. Each step = one batch of K=4 episodes.
+- Add `loss_type="dapo"`, `epsilon_high=0.28`, `delta=1.5`, `mask_truncated_completions=True`.
+- Reward structure: 5 functions in a list, not one `reward_fn`. Each maps to a RubricComposer dimension.
+
+The training compute estimate stays the same (~1.5h on L4 / ~3-4h on T4), since the bottleneck is rollout latency, not the optimizer.
+
+---
+
+## 21. Research Paper Techniques — Integrating `Planning/reward engg.md`
+
+`Planning/reward engg.md` distills 9 named techniques from the reward-engineering literature. This section maps each technique to a concrete decision in our 30h plan: either **USE NOW** (already wired into a workstream, with the implementation hook) or **DEFER** (cite in README future work with a ready-to-paste sentence). Citing the techniques by name in the README is what turns our submission from "we built an RL env" into "we built an RL env grounded in current research" — directly serving the 30% Storytelling axis.
+
+### 21.1 Technique-to-implementation map
+
+| # | Technique (from `reward engg.md`) | Status | FarmSim implementation hook |
+|---|---|---|---|
+| 1 | **Hybrid Multi-Objective Reward** (Execution + Similarity + Preference) | ✅ USE NOW | §20.1 5-function reward list. Tag explicitly: `task_completion_reward` = **Execution anchor**; `format_reward` + heuristic-distance = **Similarity guide**; `anti_exploit_reward` = **Preference/Model-based refiner** |
+| 2 | **Execution-Based Rewards** (verifiable anchor) | ✅ USE NOW | `task_completion_reward` returns the env's deterministic grade. The env IS the verifiable oracle — directly analogous to "compiler/test-runner" in the source paper |
+| 3 | **Similarity-Based Rewards** (CodeBLEU/AST analog) | ✅ USE NOW (cheap version) | Add `heuristic_similarity_reward(c)`: edit-distance between agent action sequence and `HeuristicAgent` action sequence on same seed. Returns +0.2 × (1 - normalized_edit_distance). Cap contribution at 30% of task reward (§20.6 pitfall #2) |
+| 4 | **Process Reward Models (PRMs)** | 🔜 DEFER | Round-3 work. README cite: *"Future work: train a PRM over (state, partial-action-sequence, future-reward) tuples for dense per-step credit assignment, following Lightman et al. (2024)."* |
+| 5 | **Potential-Based Reward Shaping (PBRS)** | ⚙️ STRETCH | If H 22-24 has slack, add `Φ(state) = market_value_of_inventory_at_projected_optimal_sell_day - current_inventory_value`. Per-step shaping reward = `γ·Φ(s') - Φ(s)`. Theory guarantee: doesn't change optimal policy (Ng et al. 1999). 40-line addition to `farming_environment.py` |
+| 6 | **Curriculum Schedules** (syntactic → compilation → tests) | ✅ USE NOW | Tasks 1 → 2 → 3 already exist (Easy 30d → Medium 45d climate-rotation → Hard 60d droughts). README must explicitly call this out as a curriculum schedule. Train on Task 1, evaluate zero-shot on 2/3 — shows curriculum generalization |
+| 7 | **Exploration-Guided Reward Shaping (EXPLORS)** | 🔜 DEFER | Round-3. README cite: *"Future work: inject intrinsic exploration bonuses for novel observations (rare market or weather events) following EXPLORS-style shaping, to prevent stuck states under sparse rewards."* |
+| 8 | **Bi-Level Optimization (BiPaRS)** | 🔜 DEFER | Round-3. README cite: *"Future work: outer-loop adaptive learning of (profit, stewardship, efficiency, anti-exploit) weights against a held-out task suite, replacing the hand-tuned weights in our RubricComposer."* |
+| 9 | **Reward Uncertainty for Exploration (RUNE)** | 🔜 DEFER | Round-3. README cite: *"Future work: ensemble of 3 LLM-judges over action rationale; their disagreement variance acts as an exploration bonus."* |
+| 10 | **Gated Thinking Rewards** | ✅ USE NOW | Already implemented as the **binary competence gate** in WS2/WS3: if `final_net_worth < initial_money`, all dimension scores collapse to 0.01 regardless of intermediate stewardship/efficiency. This is structurally identical to Gated Thinking (DeepSeek-R1 pattern: reasoning rewarded only if final answer correct). Name-check it in the README |
+| 11 | **Inverse Reward Design (IRD)** | 🔜 DEFER | Round-3. README cite: *"Future work: treat the RubricComposer's hand-coded weights as proxy observations and infer the true objective from heuristic-agent demonstrations, building a risk-averse policy following Hadfield-Menell et al. (2017)."* |
+| 12 | **Text2Reward** (LLM-generated reward fns) | 🔜 DEFER | Round-3. README cite: *"Future work: bootstrap new task graders via Text2Reward — an LLM writes the reward function from a natural-language task description."* |
+
+### 21.2 Concrete code hooks for the USE-NOW techniques
+
+**(1) (2) (3) (10)** — extend §20.1's reward function list:
+
+```python
+def task_completion_reward(prompts, completions, **kwargs):
+    """Execution-based reward (verifiable anchor) — Hybrid Multi-Objective principle."""
+    return [run_episode(c)["grade"] * 2.0 for c in completions]
+
+def format_reward(prompts, completions, **kwargs):
+    """Similarity-style format guide — keeps reward dense."""
+    return [0.3 if all_steps_parse(c) else 0.0 for c in completions]
+
+def heuristic_similarity_reward(prompts, completions, **kwargs):
+    """Similarity-based reward (Guide) — analog of CodeBLEU/AST similarity from reward_engg.md.
+    Compares agent action sequence to HeuristicAgent's policy on the same noise_seed."""
+    rewards = []
+    for prompt, completion, seed in zip(prompts, completions, kwargs["noise_seed"]):
+        agent_actions = extract_action_sequence(completion)
+        heuristic_actions = run_heuristic_episode(seed)
+        sim = 1.0 - normalized_edit_distance(agent_actions, heuristic_actions)
+        rewards.append(0.2 * sim)         # ≤30% of max task_completion_reward (pitfall #2)
+    return rewards
+
+def anti_exploit_reward(prompts, completions, **kwargs):
+    """Preference/Model-based refiner — penalizes spam-water + HFT exploits from v2 §2."""
+    return [-1.0 if exploit_pattern(c) else 0.0 for c in completions]
+
+def stewardship_reward(prompts, completions, **kwargs):
+    """Multi-objective component — long-term soil health."""
+    return [0.5 * healthy_fraction(c) for c in completions]
+
+# Gated Thinking — implemented as binary competence gate inside RubricComposer (§7)
+# (already in tasks.py — no separate reward function needed)
+```
+
+**(6) Curriculum Schedule** — no code change; explicit README framing:
+
+> *"FarmSim ships with a 3-task curriculum schedule (Easy 30-day stable climate → Medium 45-day climate rotation → Hard 60-day drought events), following the curriculum-schedule principle from `Planning/reward engg.md`. We train GRPO on Task 1 only and evaluate zero-shot on Tasks 2 and 3 to demonstrate curriculum generalization."*
+
+**(5) PBRS — STRETCH if H 22-24 has slack:**
+
+```python
+# In server/farming_environment.py
+def _potential(self, state) -> float:
+    """Φ(s) = projected inventory value at optimal sell day, minus current inventory."""
+    inv_value = sum(qty * self.market.spot_price(crop) for crop, qty in state.storage.items())
+    optimal_sell_value = sum(
+        qty * self.market.projected_max_price_in_window(crop, days_remaining=self.days_left)
+        for crop, qty in state.storage.items()
+    )
+    return optimal_sell_value - inv_value
+
+def _pbrs_shaping(self, prev_state, curr_state, gamma=0.99) -> float:
+    """Per-step shaping reward — Ng et al. 1999 PBRS guarantees policy invariance."""
+    return gamma * self._potential(curr_state) - self._potential(prev_state)
+```
+
+Add `_pbrs_shaping(...)` to the per-step reward in `step()`. README must cite Ng et al. 1999 if shipped.
+
+### 21.3 Ready-to-paste README paragraphs (citing the techniques)
+
+Drop these verbatim into the README `Reward design` section (Workstream 5, README rewrite step 4):
+
+> **Reward design — research-grounded, multi-objective.**
+>
+> Our reward signal is a 5-function decomposition implementing the **Hybrid Multi-Objective Reward Architecture** from the reward-engineering literature:
+>
+> - **Execution-based anchor** (`task_completion_reward`): the verifiable, deterministic episode grade.
+> - **Similarity guide** (`heuristic_similarity_reward`): edit-distance between agent action sequence and a hand-crafted heuristic baseline — a CodeBLEU-analog for action sequences.
+> - **Format guide** (`format_reward`): cheap dense signal for valid JSON action structure.
+> - **Preference/refiner** (`anti_exploit_reward`): explicitly penalizes the spam-water and high-frequency-trading patterns flagged in our self-assessment.
+> - **Multi-objective stewardship** (`stewardship_reward`): rewards long-term soil and crop health.
+>
+> A **binary competence gate** (Gated Thinking pattern, à la DeepSeek-R1) collapses all dimension scores to the floor if the agent ends bankrupt — preventing reward hacking via stewardship-without-profit.
+>
+> The 3-task curriculum (Easy → Medium → Hard) is a deliberate **curriculum schedule**; we train on the easiest task and evaluate zero-shot generalization on the harder ones.
+>
+> **Future work** extends this with Process Reward Models for per-step credit assignment, Potential-Based Reward Shaping for dense temporal guidance, Bi-Level Optimization for adaptive weight learning, and Reward Uncertainty as an exploration signal.
+
+### 21.4 Standing prompt for future Claude sessions
+
+When any teammate (or future Claude session) is editing reward logic in this repo, they should consult `Planning/reward engg.md` BEFORE writing code. Add this to `STATUS.md` as a permanent note:
+
+> **Reward-engineering rule:** Before adding, removing, or reweighting any reward component, re-read `Planning/reward engg.md` and confirm the change is consistent with one of the 9 named techniques. If the change doesn't map to a named technique, write a one-line justification in the PR description.
+
+This keeps the reward function aligned with research practice and gives the README a continuously-cited source.
+
+### 21.5 What to add to `STATUS.md` at H 0
+
+```markdown
+## Reward Engineering Reference
+- Source: Planning/reward engg.md (9 named techniques + future-work roadmap)
+- USE NOW: Hybrid Multi-Objective (Exec+Sim+Pref), Curriculum Schedule, Gated Thinking
+- STRETCH (H 22-24 slack only): PBRS via Φ(state) = optimal_sell_value - current_inventory_value
+- DEFER (cite in README future work): PRMs, EXPLORS, BiPaRS, RUNE, IRD, Text2Reward
+- Rule: any reward edit must map to a named technique; cite in PR description
+```
+
+---
+
+## 22. Bottom Line
 
 GRPO-first is correct, but only after the v2 noisy-text pivot transforms the env from grid-world to LLM-native — otherwise the 40% Innovation slot evaporates and training curves are meaningless (B4). The 0.01 catastrophic baseline is our biggest asset: any modest training gain produces a dominant reward curve. README + video held to the last 3h block, with theme tags and the verbatim narrative reframe up top. HF $90 credit is the **primary** training compute, not insurance. Reward 2.0 (PRMs / PBRS / BiPaRS) named in future work but not implemented. Cut everything else.
 
