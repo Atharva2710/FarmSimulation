@@ -160,7 +160,11 @@ def parse_action(response_text: str) -> Dict[str, Any]:
     return dict(FALLBACK_ACTION)
 
 def validate_action(action: Dict[str, Any]) -> Dict[str, Any]:
-    valid_types = {"wait", "buy_seeds", "plant", "irrigate", "harvest", "sell", "write_journal"}
+    valid_types = {
+        "wait", "end_day", "buy_seeds", "plant", "irrigate", "harvest",
+        "sell", "pump_water", "apply_fertilizer", "spray_pesticide",
+        "pull_weeds", "buy_plot", "clear", "write_journal",
+    }
     if not isinstance(action, dict):
         return dict(FALLBACK_ACTION)
     if action.get("action_type") not in valid_types:
