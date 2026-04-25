@@ -155,11 +155,12 @@ def parse_action(response_text: str) -> Dict[str, Any]:
     return dict(FALLBACK_ACTION)
 
 def validate_action(action: Dict[str, Any]) -> Dict[str, Any]:
-    valid_types = {"wait", "buy_seeds", "plant", "irrigate", "harvest", "sell"}
+    valid_types = {"wait", "buy_seeds", "plant", "irrigate", "harvest", "sell", "write_journal"}
     if not isinstance(action, dict):
         return dict(FALLBACK_ACTION)
     if action.get("action_type") not in valid_types:
         return dict(FALLBACK_ACTION)
+
     if "plot_id" in action:
         try:
             action["plot_id"] = int(action["plot_id"])
@@ -208,12 +209,18 @@ def run_episode(
             diag(f"    Done at step {step_num - 1}")
             break
 
-        text_summary  = obs.get("text_summary", "No summary available")
+        narrative_text = obs.get("narrative_text")
+        text_summary   = obs.get("text_summary", "No summary available")
+        
+        # WS1 v2: prioritize narrative_text if present, fallback to structured summary
+        primary_state = narrative_text if narrative_text else text_summary
+        
         valid_actions = obs.get("valid_actions", [])
         history_text  = "\n".join(history[-4:]) if history else "None"
 
         user_prompt = textwrap.dedent(f"""
-            {text_summary}
+            {primary_state}
+
 
             Valid actions this step:
             {chr(10).join(f'  - {a}' for a in valid_actions)}

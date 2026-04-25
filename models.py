@@ -22,6 +22,8 @@ class ActionType(str, Enum):
     SPRAY_PESTICIDE  = "spray_pesticide"
     PULL_WEEDS       = "pull_weeds"
     BUY_PLOT         = "buy_plot"
+    WRITE_JOURNAL    = "write_journal"
+
 
 
 class SeedType(str, Enum):
@@ -120,6 +122,8 @@ class FarmAction(Action):
     plot_id:       Optional[int] = Field(None, ge=0, le=99, description="required for plot interactions")
     seed_type:     Optional[str] = Field(None, description="required for buy_seeds and plant")
     quantity:      Optional[int] = Field(None, gt=0, description="seeds to buy or kg to sell")
+    journal_entry: Optional[str] = Field(None, description="required for write_journal action; stored in env and returned in narrative_text")
+
     
     # Audit metadata
     thought:       Optional[str] = Field(None)
