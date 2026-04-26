@@ -1,0 +1,19 @@
+# Training-only deps for train.py (GRPO).
+# Keep separate from server/requirements.txt so the HF Space image stays small.
+#
+# Install on Colab T4:
+#     pip install -r requirements-train.txt
+#
+# Locally for sanity tests on a tiny GPU:
+#     pip install -r requirements-train.txt
+#     python train.py --tiny --num-iterations 2
+torch>=2.1.0
+transformers>=4.45.0
+peft>=0.13.0
+bitsandbytes>=0.43.0; platform_system != "Darwin"
+accelerate>=0.34.0
+numpy>=1.24
+requests>=2.31.0
+# Optional: comment out if you don't want W&B
+wandb>=0.18.0
+matplotlib>=3.8.0
