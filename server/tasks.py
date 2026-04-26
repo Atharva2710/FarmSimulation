@@ -121,7 +121,8 @@ def _net_worth(r: EpisodeRecord) -> float:
 
 TASK1_RUBRIC = RubricComposer(
     gates=[
-        Gate("solvency", lambda r: _net_worth(r) >= r.initial_money, 0.01),
+        # Agent must earn at least 10% above starting capital — preserving cash by doing nothing fails
+        Gate("growth", lambda r: _net_worth(r) >= r.initial_money * 1.05, 0.01),
     ],
     dimensions=[
         Dimension("profit",      0.7, lambda r: _score_profit(r, 2.0)),
@@ -132,7 +133,7 @@ TASK1_RUBRIC = RubricComposer(
 
 TASK2_RUBRIC = RubricComposer(
     gates=[
-        Gate("solvency", lambda r: _net_worth(r) >= r.initial_money, 0.01),
+        Gate("growth", lambda r: _net_worth(r) >= r.initial_money * 1.05, 0.01),
     ],
     dimensions=[
         Dimension("profit",      0.6, lambda r: _score_profit(r, 2.5)),
@@ -143,7 +144,7 @@ TASK2_RUBRIC = RubricComposer(
 
 TASK3_RUBRIC = RubricComposer(
     gates=[
-        Gate("solvency", lambda r: _net_worth(r) >= r.initial_money, 0.01),
+        Gate("growth", lambda r: _net_worth(r) >= r.initial_money * 1.05, 0.01),
     ],
     dimensions=[
         Dimension("profit",      0.5, lambda r: _score_profit(r, 3.0)),
