@@ -44,7 +44,7 @@ The agent found a strategy almost immediately. An elegant, deeply useless strate
 
 It waited. Every single day, it chose the `wait` action. For thirty days straight it did absolutely nothing, and it survived. No crops to lose to drought. No money spent on bad investments. Small patience reward collected for staying alive. The agent had found the floor and decided the floor was fine.
 
-> **[INSERT GRAPH — Round 1: flat task completion at 1.0, actual reward flatlined at −0.75 across all training steps]**
+> ![alt text](assets/gen1_results.png)
 
 The reward curve tells the story cleanly. Task completion technically registers as 1.0 because the agent didn't go bankrupt or lose any crops. The actual reward — which requires profit and productive action — sits at a stable −0.75 for the entire run. The agent isn't learning to farm. It's learning to not-die passively, which is a very different and much less useful skill.
 
@@ -58,7 +58,7 @@ The fix was conceptually simple but required rethinking the reward structure. Id
 
 Round 2 introduced a more sophisticated reward system with separate signals for action quality, format validity, and simulation outcomes. The training run that followed is one of the clearest illustrations we've seen of a model optimizing exactly what you measured instead of what you meant.
 
-> **[INSERT GRAPH — Round 2: format_reward/mean (green) climbing to 0.5 by step 40, get_sim_reward/mean (blue) crashing from −0.2 to −0.5, frac_reward_zero_std (pink) approaching 1.0 by end of run]**
+> ![alt text](assets/gen2_results.png)
 
 Three things happen in this graph, and they tell a complete story.
 
@@ -80,7 +80,7 @@ The lesson we took from Round 2 was about reward scale calibration. Format rewar
 
 Round 3 brought the rebalanced reward structure — simulation reward dominant, format reward reduced to a minor signal, stronger KL penalty to maintain diversity. What we got was more stable, and more puzzling.
 
-> **[INSERT GRAPH — Round 3: get_sim_reward/mean (blue) flatlined at 0.70, xml_count_reward/mean (green) flatlined at 0.30, reward (purple) near 1.0 throughout, frac_reward_zero_std (pink) repeatedly spiking to 1.0 then briefly dropping before recovering]**
+> ![alt text](assets/gen3_results.jpg)
 
 The simulation reward stabilized at 0.70 — the agent is no longer crashing the simulation with nonsensical actions. That's real progress. The total reward sits near 1.0 for most of the run. On the surface, this looks like success.
 
