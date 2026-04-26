@@ -1,4 +1,7 @@
 import gradio as gr
+import warnings
+warnings.filterwarnings("ignore", message="The parameters have been moved from the Blocks constructor to the launch")
+
 import os
 import json
 import asyncio
@@ -1278,7 +1281,16 @@ def create_gradio_ui(env_factory):
 
         # Agent Instances
 
-        async def get_status(reasoning=None, status=None, current_reasoning=None, current_status=None):
+        session_envs = {}
+        
+        def get_env(request: gr.Request = None):
+            if request is None or not hasattr(request, "session_hash") or not request.session_hash:
+                return env_factory()
+            if request.session_hash not in session_envs:
+                session_envs[request.session_hash] = env_factory()
+            return session_envs[request.session_hash]
+
+        async def get_status(reasoning=None, status=None, current_reasoning=None, current_status=None, request: gr.Request = None):
             """Return a single snapshot of all dashboard outputs.
 
             Using gr.State for reasoning/status to ensure session-isolation 
@@ -1287,7 +1299,7 @@ def create_gradio_ui(env_factory):
             active_reasoning = reasoning if reasoning is not None else current_reasoning
             active_status = status if status is not None else current_status
             
-            env = env_factory()
+            env = get_env(request)
             obs = env.get_observation()
             metadata = env.get_metadata()
             msg = getattr(env, "_action_message", "")
@@ -1306,16 +1318,16 @@ def create_gradio_ui(env_factory):
             
             return [out_hud] + out_plots + [out_seeds, out_storage, out_market, out_msg, out_history, out_json, metadata, active_reasoning, active_status]
 
-        async def handle_reset(tid, current_reasoning, current_status):
-            env = env_factory()
+        async def handle_reset(tid, current_reasoning, current_status, request: gr.Request):
+            env = get_env(request)
             # Note: FARMING_TASK_ID environment variable is still used by some
             # low-level env logic, but we scope the reset here.
             os.environ["FARMING_TASK_ID"] = str(int(tid))
             env.reset(task_id=int(tid))
-            return await get_status(reasoning="Environment Reset.", status="🟢 READY")
+            return await get_status(reasoning="Environment Reset.", status="🟢 READY", request=request)
 
-        async def handle_action(action_type, p_id, qty, s_type, current_reasoning, current_status):
-            env = env_factory()
+        async def handle_action(action_type, p_id, qty, s_type, current_reasoning, current_status, request: gr.Request = None):
+            env = get_env(request)
             action = {"action_type": action_type}
             if action_type in ["plant", "irrigate", "harvest", "clear", "apply_fertilizer", "spray_pesticide", "pull_weeds", "end_day"]:
                 action["plot_id"] = int(p_id)
@@ -1328,10 +1340,10 @@ def create_gradio_ui(env_factory):
                 action["seed_type"] = s_type
             
             env.step(action)
-            return await get_status(status=f"DONE: {action_type.upper()}", current_reasoning=current_reasoning)
+            return await get_status(status=f"DONE: {action_type.upper()}", current_reasoning=current_reasoning, request=request)
 
-        async def get_initial_status(current_reasoning, current_status):
-            return await get_status(reasoning="System initialized.", status="🟢 READY")
+        async def get_initial_status(current_reasoning, current_status, request: gr.Request):
+            return await get_status(reasoning="System initialized.", status="🟢 READY", request=request)
 
         # ── Event Handlers ────────────────────────────────────────────────────────
 
@@ -1342,36 +1354,36 @@ def create_gradio_ui(env_factory):
         reset_btn.click(handle_reset, inputs=[task_id_input, session_reasoning, session_status], outputs=base_outputs)
         
         # We need a small wrapper for buttons to inject the fixed command name
-        async def do_wait(p, q, s, r, st):
-            return await handle_action("wait", p, q, s, r, st)
-        async def do_buy(p, q, s, r, st):
-            return await handle_action("buy_seeds", p, q, s, r, st)
-        async def do_pump(p, q, s, r, st):
-            return await handle_action("pump_water", p, q, s, r, st)
-        async def do_end_day(p, q, s, r, st):
-            return await handle_action("end_day", p, q, s, r, st)
-        async def do_plant(p, q, s, r, st):
-            return await handle_action("plant", p, q, s, r, st)
-        async def do_irrigate(p, q, s, r, st):
-            return await handle_action("irrigate", p, q, s, r, st)
-        async def do_harvest(p, q, s, r, st):
-            return await handle_action("harvest", p, q, s, r, st)
-        async def do_clear(p, q, s, r, st):
-            return await handle_action("clear", p, q, s, r, st)
-        async def do_fertilize(p, q, s, r, st):
-            return await handle_action("apply_fertilizer", p, q, s, r, st)
-        async def do_spray(p, q, s, r, st):
-            return await handle_action("spray_pesticide", p, q, s, r, st)
-        async def do_pull_weeds(p, q, s, r, st):
-            return await handle_action("pull_weeds", p, q, s, r, st)
-        async def do_sell(p, q, s, r, st):
-            return await handle_action("sell", p, q, s, r, st)
-        async def do_buy_plot(p, q, s, r, st):
-            return await handle_action("buy_plot", p, q, s, r, st)
+        async def do_wait(r, st, request: gr.Request):
+            return await handle_action("wait", 0, 0, "", r, st, request)
+        async def do_buy(p, q, s, r, st, request: gr.Request):
+            return await handle_action("buy_seeds", p, q, s, r, st, request)
+        async def do_pump(p, q, s, r, st, request: gr.Request):
+            return await handle_action("pump_water", p, q, s, r, st, request)
+        async def do_end_day(p, q, s, r, st, request: gr.Request):
+            return await handle_action("end_day", p, q, s, r, st, request)
+        async def do_plant(p, q, s, r, st, request: gr.Request):
+            return await handle_action("plant", p, q, s, r, st, request)
+        async def do_irrigate(p, q, s, r, st, request: gr.Request):
+            return await handle_action("irrigate", p, q, s, r, st, request)
+        async def do_harvest(p, q, s, r, st, request: gr.Request):
+            return await handle_action("harvest", p, q, s, r, st, request)
+        async def do_clear(p, q, s, r, st, request: gr.Request):
+            return await handle_action("clear", p, q, s, r, st, request)
+        async def do_fertilize(p, q, s, r, st, request: gr.Request):
+            return await handle_action("apply_fertilizer", p, q, s, r, st, request)
+        async def do_spray(p, q, s, r, st, request: gr.Request):
+            return await handle_action("spray_pesticide", p, q, s, r, st, request)
+        async def do_pull_weeds(p, q, s, r, st, request: gr.Request):
+            return await handle_action("pull_weeds", p, q, s, r, st, request)
+        async def do_sell(p, q, s, r, st, request: gr.Request):
+            return await handle_action("sell", p, q, s, r, st, request)
+        async def do_buy_plot(p, q, s, r, st, request: gr.Request):
+            return await handle_action("buy_plot", p, q, s, r, st, request)
 
         action_inputs = [plot_selector, quantity, seed_type, session_reasoning, session_status]
         
-        wait_btn.click(do_wait, inputs=action_inputs, outputs=base_outputs)
+        wait_btn.click(do_wait, inputs=[session_reasoning, session_status], outputs=base_outputs)
         buy_btn.click(do_buy, inputs=action_inputs, outputs=base_outputs)
         pump_btn.click(do_pump, inputs=action_inputs, outputs=base_outputs)
         end_day_btn.click(do_end_day, inputs=action_inputs, outputs=base_outputs)

@@ -40,7 +40,7 @@ ACTION_LABOR_COSTS = {
     "spray_pesticide": 1.0,
     "pull_weeds": 1.5,
     "buy_plot": 2.0,
-    "wait": 10.0,
+    "wait": 2.0,
     "write_journal": 0.1,
     "end_day": 0.0,
 
@@ -279,7 +279,6 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
                 self._healthy_days += 1
                 
             reward += self._post_advance_penalties()
-            self._labor_hours = 10.0  # Reset labor
             
             # Check done
             done = self._day >= self._max_days or self._money <= 0.0
@@ -1015,6 +1014,7 @@ class FarmingEnvironment(Environment[FarmAction, FarmObservation, FarmState]):
            with added difficulty-specific noise.
         """
         self._day += 1
+        self._labor_hours = 10.0  # Reset labor for the new day
         idx          = (self._day // CLIMATE_ROTATION_DAYS) % len(CLIMATE_ROTATION)
         climate_name = CLIMATE_ROTATION[idx]
         cfg          = CLIMATE_CONFIG[climate_name]

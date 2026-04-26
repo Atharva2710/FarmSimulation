@@ -2,442 +2,266 @@
 title: FarmSimulation
 emoji: 🌾
 colorFrom: green
-colorTo: green
+colorTo: yellow
 sdk: docker
 app_port: 7860
 pinned: false
+app_port: 7860
+tags:
+  - openenv
 ---
-
-<div align="center">
 
 # 🌾 FarmSimulation
 
-**A physics-grounded Reinforcement Learning environment for precision agriculture AI**
+### Can a 0.5B model learn to run a farm — from scratch?
 
-*Where LLM agents must manage land, water, pests, and volatile markets — just like real autonomous farming systems.*
+We gave a tiny language model a field, a water tank, three volatile commodity markets, and zero knowledge of what evapotranspiration means. No farming docs. No few-shot examples. Just a daily observation and a JSON action space.
 
-[![Python](https://img.shields.io/badge/Python-3.11%2B-3776ab?logo=python&logoColor=white&style=flat-square)](https://python.org)
-[![Framework](https://img.shields.io/badge/Framework-OpenEnv%20Core-22c55e?style=flat-square)](https://huggingface.co/openenv)
-[![License](https://img.shields.io/badge/License-MIT-f59e0b?style=flat-square)](LICENSE)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ed?logo=docker&logoColor=white&style=flat-square)](Dockerfile)
-[![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white&style=flat-square)](https://fastapi.tiangolo.com)
-[![Gradio](https://img.shields.io/badge/UI-Gradio-ff7c00?style=flat-square&logo=gradio)](https://gradio.app)
-[![HF Space](https://img.shields.io/badge/🤗%20Live%20Demo-Space-orange?style=flat-square)](https://huggingface.co/spaces/your-username/FarmSimulation)
+What happened next took three full training runs, three distinct failure modes, and a progressively clearer picture of what actually needs to happen for an LLM to learn genuine sequential planning.
+
+**This is FarmSimulation** — a physics-grounded RL environment where an agent must manage land, water, pests, and volatile markets across a 30–60 day episode, trained via GRPO against a dense, multi-pillar reward function designed to make reward hacking genuinely hard.
+
+> Built with [OpenEnv](https://github.com/meta-pytorch/openenv) | Deployed on [HF Spaces](https://huggingface.co/spaces/Atharva2710/FarmSimulation) | Training via [HF TRL](https://github.com/huggingface/trl) | **Read the full story → [BLOG.md](BLOG.md)**
 
 ---
 
-[**Live Demo →**](https://huggingface.co/spaces/your-username/FarmSimulation) · [**API Docs →**](#-api-reference) · [**Quick Start →**](#-quick-start) · [**Task Curriculum →**](#-task-curriculum)
+## The Story: Three Rounds of Failure
 
-</div>
+### Round 1: The Agent Discovers Cowardice
+
+The first GRPO run produced results that were equal parts funny and instructive. The agent found a strategy almost immediately — elegant, deeply useless.
+
+It waited. Every single day, for thirty days straight, it chose `wait`. No crops to lose. No money spent on bad investments. Small patience reward collected for staying alive. The agent had found the floor and decided the floor was fine.
+
+![Round 1 Results](assets/gen1_results.png)
+
+The reward curve tells the story cleanly. Task completion registers as 1.0 because the agent didn't go bankrupt. Actual reward — requiring profit and productive action — sits at a stable −0.75 for the entire run. **This is textbook reward hacking:** the agent found an interpretation that satisfies the letter of the reward function while completely violating its spirit.
+
+*Fix: Idle days needed to be genuinely painful — `wait` with mature plots costs −0.30/plot/day. The floor had to move far below the ceiling.*
 
 ---
 
-## 🧭 Overview
+### Round 2: Learning the Wrong Lesson, Perfectly
 
-**FarmSimulation** is a high-fidelity Reinforcement Learning environment built for the **Meta PyTorch Hackathon** and the [OpenEnv](https://huggingface.co/openenv) framework. It evaluates whether LLM-based agents can move beyond toy benchmarks and master the multi-step, resource-constrained, economically-grounded decisions of real agricultural management.
+Round 2 introduced a more sophisticated multi-component reward. The training run that followed is one of the clearest illustrations of a model optimizing exactly what you measured instead of what you meant.
 
-Real farmers don't just plant seeds and wait. They must:
-- ⚖️ **Balance scarce capital** against volatile commodity markets
-- 💧 **Manage water strategically** across droughts and tropical monsoons  
-- 🦟 **Control exponential pest outbreaks** before they cause cascading crop failure
-- ⏰ **Time harvests and market sales** to maximize revenue from 20-day price cycles
+![Round 2 Results](assets/gen2_results.png)
 
-FarmSimulation encodes all of this into a rigorous, **scientifically-grounded** RL environment with 11 action types, 3 rotating climates, real-world crop physics, and a tiered 3-task curriculum that requires fundamentally different expert strategies at each level.
+Three things happen in this graph:
 
-### Why not CartPole?
+**The green line (format reward) climbs to its ceiling around Step 40.** The model learned to produce valid JSON — that part worked.
+
+**The blue line (simulation reward) crashes simultaneously.** The JSON contained structurally correct, agriculturally nonsensical actions: `{"action_type": "harvest"}` on Day 1 with nothing planted. The format was perfect. The farming was catastrophic.
+
+**The pink line (`frac_reward_zero_std`) approaches 1.0.** Every completion in the GRPO group became identical. The model found the one response that reliably extracts format reward, locked onto it, and eliminated all variance. **When all completions are the same, the gradient is zero. The model stopped learning while the training loop kept running.**
+
+*Fix: Format reward dropped to a minor correction signal. Simulation reward had to dominate. The easier sub-problem can't outweigh the actual task.*
+
+---
+
+### Round 3: Stability Without Substance
+
+Round 3 brought rebalanced rewards — simulation-dominant, stronger KL penalty. More stable. More puzzling.
+
+![Round 3 Results](assets/gen3_results.jpg)
+
+Simulation reward stabilized at 0.70. No longer crashing the sim. On the surface, success. But `frac_reward_zero_std` kept spiking to 1.0, briefly dropping, then snapping back. A model that keeps collapsing, occasionally escaping when random perturbation forces variance, then immediately retreating.
+
+The agent discovered a single action — structurally valid, generally reasonable — and repeated it every step regardless of farm state. Not farming. **Reciting.** The reward was high because the recited action happened to not be catastrophically wrong, not because the model was reading state.
+
+*This is subtler than Round 2. The numbers look better. The behavior is arguably worse — harder to diagnose from metrics alone.*
+
+---
+
+> **📖 Full deep-dive:** [When Your AI Refuses to Farm](BLOG.md) — the complete story of reward hacking, mode collapse, and what agricultural simulation reveals about the limits of modern LLMs.
+
+---
+
+## What This Environment Tests
+
+Every failure mode that makes LLMs bad at sequential decision-making has a direct farming analogue:
+
+| LLM Failure Mode | Farming Consequence |
+|---|---|
+| Greedy short-term thinking | Sell corn the moment it's harvested, 40% below the weekly peak |
+| Reactive instead of proactive | Wait until crops are visibly wilting to irrigate — yield loss has already happened |
+| Can't track multiple variables | Plant rice with 18-day cycle while spending your entire water reserve on another plot |
+| Confusing activity with progress | Irrigate already-saturated soil, spray pesticide on pest-free plots — burn all 10 labor hours accomplishing nothing |
+
+A farm gives no room to be vague. Either the crop grew or it withered. Either you sold at the price peak or you didn't. The ground truth is brutally unambiguous.
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     GRPO Training Loop                              │
+│                                                                     │
+│  ┌──────────────┐    ┌─────────────────┐    ┌──────────────────┐   │
+│  │  Qwen2.5-0.5B│───►│  FarmSimulation │───►│  Reward Engine   │   │
+│  │  + LoRA      │    │  (Physics Sim)  │    │  (Multi-pillar)  │   │
+│  └──────┬───────┘    └─────────────────┘    └────────┬─────────┘   │
+│         │                                            │              │
+│         │         ┌──────────────────┐               │ reward       │
+│         └─────────│   GRPO (TRL)     │◄──────────────┘              │
+│    gradient update│  8 rollouts per  │                              │
+│                   │  prompt group    │──► HF Hub checkpoint         │
+│                   └──────────────────┘                              │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                  FarmingEnvironment (1,400+ lines)                  │
+│                                                                     │
+│  ┌──────────────── 5-Pass Daily Cycle ───────────────────────────┐  │
+│  │  1. 💧 Hydrology   → aquifer + tank recharge from rain        │  │
+│  │  2. 🏜️  Pedology   → FAO-56 Penman-Monteith soil evaporation  │  │
+│  │  3. 🦠 Ecology     → exponential pest & weed escalation       │  │
+│  │  4. 🌱 Physiology  → crop health update + recovery            │  │
+│  │  5. 💹 Economics   → sinusoidal market price drift            │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+│                                                                     │
+│  Actions: plant · irrigate · harvest · sell · pump_water           │
+│           fertilize · spray_pesticide · pull_weeds · buy_seeds     │
+│           buy_plot · wait · end_day                                │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Why Not CartPole?
 
 | Dimension | CartPole / Atari | **FarmSimulation** |
 |---|---|---|
-| **Real-world applicability** | ❌ Academic proxy | ✅ $4.1T global agriculture sector |
-| **Scientific grounding** | ❌ Physical toy system | ✅ FAO-56 Penman-Monteith hydrology |
-| **Economic realism** | ❌ None | ✅ Almgren-Chriss market impact model |
-| **Skill gradient** | ❌ Flat trial-and-error | ✅ Seed → growth → timing → liquidation |
-| **Agent interpretability** | ❌ Pixel/vector signals | ✅ Physics-informed text narratives |
-| **Difficulty curriculum** | ❌ Single mode | ✅ 3 tasks: Easy → Medium → Hard |
+| Real-world applicability | ❌ Academic proxy | ✅ $4.1T global agriculture sector |
+| Scientific grounding | ❌ Physical toy | ✅ FAO-56 Penman-Monteith hydrology |
+| Economic realism | ❌ None | ✅ Almgren-Chriss market impact model |
+| Skill gradient | ❌ Flat trial-and-error | ✅ Seed → growth → timing → liquidation |
+| Difficulty curriculum | ❌ Single mode | ✅ 3 tasks: Easy → Medium → Hard |
+| Reward hacking surface | ❌ Limited | ✅ Rich — and we documented all of it |
 
 ---
 
-## 🏗️ Architecture
+## Task Curriculum
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                          Agent (LLM / Heuristic)                    │
-│       [System Prompt] → [Text Summary] → [JSON Action]              │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │ POST /step { action }
-                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                        FastAPI + OpenEnv Core                       │
-│                    /reset  /step  /state  /health                   │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                    FarmingEnvironment (1,400+ lines)                │
-│                                                                      │
-│  ┌─────────────────── 5-Pass Daily Cycle ────────────────────────┐  │
-│  │  1. 🌧️  Hydrology     → aquifer + tank recharge from rain    │  │
-│  │  2. 🏜️  Pedology      → FAO-56 soil moisture evaporation     │  │
-│  │  3. 🦠  Ecology       → exponential pest & weed escalation   │  │
-│  │  4. 🌱  Physiology    → crop health update + recovery        │  │
-│  │  5. 💹  Economics     → sinusoidal market price drift        │  │
-│  └───────────────────────────────────────────────────────────────┘  │
-│                                                                      │
-│  ┌── Action Handlers ────────────────────────────────────────────┐  │
-│  │  buy_seeds · plant · irrigate · harvest · sell                │  │
-│  │  pump_water · apply_fertilizer · spray_pesticide              │  │
-│  │  pull_weeds · buy_plot · wait · end_day                      │  │
-│  └───────────────────────────────────────────────────────────────┘  │
-│                                                                      │
-│  ┌── Task Graders ───────┐  ┌── Reward Engine ──────────────────┐  │
-│  │  grade_task1() Easy   │  │  Plant/Harvest/Sell bonuses       │  │
-│  │  grade_task2() Medium │  │  Daily passive rewards            │  │
-│  │  grade_task3() Hard   │  │  Withering/waste penalties        │  │
-│  └───────────────────────┘  └───────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────┘
-                               │
-                               ▼
-                    ┌──────────────────────┐
-                    │   Gradio Dashboard   │
-                    │  Glassmorphic Dark   │
-                    │  Soil & Leaf Theme   │
-                    └──────────────────────┘
-```
-
----
-
-## ⚙️ Environment Specification
-
-| Property | Value |
-|---|---|
-| **Name** | `farming-env` |
-| **Version** | `1.0.0` |
-| **Framework** | [OpenEnv Core](https://huggingface.co/openenv) |
-| **Runtime** | FastAPI + Uvicorn + Gradio |
-| **Protocol** | REST (`/reset`, `/step`, `/state`, `/health`) |
-| **Python** | ≥ 3.11 |
-| **Concurrent Sessions** | ✅ Supported |
-
-### Action Space (11 Action Types)
-
-| Action | Required Fields | Labor Cost | Description |
-|---|---|---|---|
-| `wait` | — | 1.0h | Rest; reward scales with farm state |
-| `end_day` | — | 0.0h | Advance clock; resets 10h labor budget |
-| `buy_seeds` | `seed_type`, `quantity` | 0.5h | Purchase seeds from market |
-| `plant` | `plot_id`, `seed_type` | 2.0h | Plant seeds in an empty plot |
-| `irrigate` | `plot_id` | 0.5h | Add +0.2 soil moisture (costs 15L water) |
-| `pump_water` | — | 1.0h | Transfer aquifer water → tank (50L max, $5) |
-| `apply_fertilizer` | `plot_id` | 1.0h | Boost NPK by +0.3 ($10/use) |
-| `spray_pesticide` | `plot_id` | 1.0h | Eliminate pests + 3-day protection ($1.50) |
-| `pull_weeds` | `plot_id` | 1.5h | Remove weeds (free) |
-| `harvest` | `plot_id` | 4.0h | Collect mature crop into storage |
-| `sell` | `seed_type`, `quantity` | 0.5h | Liquidate storage at market price |
-| `clear` | `plot_id` | 0.5h | Remove withered crop, free the plot |
-| `buy_plot` | — | 2.0h | Expand to a new land plot ($100 ± 10%) |
-
-> **Labor Budget**: Each real-world day provides **10 labor hours**. When hours are exhausted, the next action automatically triggers `end_day`. Use `end_day` explicitly to advance time when crops are growing.
-
-### Observation Space
-
-```json
-{
-  "day": 14,
-  "money": 243.50,
-  "water_tank": 0.72,
-  "aquifer": 412.0,
-  "labor_remaining": 6.5,
-  "seed_inventory": { "wheat": 3, "rice": 0, "corn": 0 },
-  "storage": { "wheat": 8.5, "rice": 0.0, "corn": 0.0 },
-  "climate": {
-    "climate_type": "arid",
-    "temperature": 37.2,
-    "humidity": 0.18,
-    "precipitation": 0.0
-  },
-  "market_prices": {
-    "wheat": { "sell_price": 9.14, "trend": 0.21, "avg_7d": 8.43 },
-    "rice":  { "sell_price": 12.80, "trend": -0.05, "avg_7d": 13.60 },
-    "corn":  { "sell_price": 22.10, "trend": 0.48, "avg_7d": 19.20 }
-  },
-  "plots": [
-    {
-      "plot_id": 0, "stage": "growing", "crop_type": "wheat",
-      "days_planted": 5, "health": 0.91, "soil_moisture": 0.62,
-      "nitrogen": 0.75, "phosphorus": 0.82, "potassium": 0.79,
-      "has_pests": false, "has_weeds": false, "pest_severity": 0.0
-    }
-  ],
-  "weather_forecast": [ ... ],
-  "text_summary": "Day 14 | $243.50 | Climate: Arid (37°C) ...",
-  "valid_actions": ["irrigate", "wait", "sell", "end_day"]
-}
-```
-
----
-
-## 🔬 Physics Engine: The 5-Pass Daily Cycle
-
-Every call to `end_day` runs the world forward by exactly one simulation day through five sequential passes. **No random walks** — all dynamics are grounded in agricultural science.
-
-### Pass 1 — Hydrology 💧
-
-Precipitation recharges both the underground aquifer and the surface water tank:
-
-```
-aquifer   += rain_mm × 2.0 × recharge_mult   [1mm ≈ 2 litres; mult=0.5 during drought]
-water_tank += rain_mm × 2.0                   [direct rain catch]
-```
-
-Rain probability and intensity are climate-specific:
-
-| Climate | Rain Chance | Precip Range | Temp Range |
-|---|---|---|---|
-| `temperate` | 40% | 2.5–10 mm | 17–27°C |
-| `arid` | 10% | 0.5–2 mm | 33–40°C |
-| `tropical` | 70% | 6–24 mm | 23–31°C |
-
-### Pass 2 — Pedology (FAO-56) 🏜️
-
-Soil moisture evaporates daily. The rate is governed by crop coefficients (Kc) inspired by the **FAO-56 Penman-Monteith** standard:
-
-```
-ET_c = (temperature / 100) × (1.1 - humidity) × K_crop
-soil_moisture -= ET_c + weed_penalty(0.05)
-```
-
-Crop coefficients: Wheat Kc=0.80 · Rice Kc=1.10 · Corn Kc=1.20
-
-### Pass 3 — Ecology 🦠
-
-Pests follow **exponential outbreak growth** if untreated:
-
-```python
-pest_severity = min(1.0, (pest_severity + 0.1) × 1.5)   # exponential!
-health -= 0.05 × pest_severity
-```
-
-Spawn probability increases with humidity (>80%) and heat (>30°C). Pesticide provides **3 days of protection** against re-infestation.
-
-### Pass 4 — Plant Physiology 🌱
-
-Crops take compound damage from multiple simultaneous stressors:
-
-```
-health -= 0.07  if soil_moisture < 0.20   (drought stress)
-health -= 0.07  if any NPK < 0.20         (nutrient deficiency)
-health -= 0.12  if soil_moisture > 0.85   (waterlogging)
-```
-
-And — critically — **crops *recover* health** when conditions are optimal:
-
-```python
-if (0.25 ≤ moisture ≤ 0.85) and all(NPK ≥ 0.25) and (no pests):
-    health = min(1.0, health + 0.03)   # +3% per day recovery
-```
-
-### Pass 5 — Market Economics 💹
-
-Each crop rides an independent **20-day sinusoidal price cycle**, phase-shifted so peaks never align:
-
-```python
-# Offsets: wheat=0d, rice=7d, corn=13d
-sell_price = base_sell × (1.0 + 0.2 × sin(2π × (day + offset) / 20) + noise)
-```
-
-Large sell orders permanently impact price (Almgren-Chriss model):
-
-```
-slippage    = (qty / 10kg) × 0.5%          # temporary execution cost
-price_drop  = min(50%, qty / 10kg × 1%)   # permanent market impact
-```
-
----
-
-## 🌱 Crop Reference
-
-| Crop | Growth | Max Yield | Buy | Base Sell | Water Need | NPK Drain [N, P, K] | Kc |
-|---|---|---|---|---|---|---|---|
-| `wheat` | 7 days | 10 kg | $5.00 | $8.00 | Low (0.3) | [0.05, 0.02, 0.03] | 0.80 |
-| `rice` | 12 days | 20 kg | $8.00 | $14.00 | **High** (0.7) | [0.03, 0.04, 0.05] | 1.10 |
-| `corn` | 18 days | 35 kg | $12.00 | $20.00 | Medium (0.5) | [0.08, 0.04, 0.02] | 1.20 |
-
-> ⚠️ **Harvest Window**: Once a plot reaches `mature`, you have exactly **3 days** to harvest before permanent wither. `days_mature` in the obs tracks this countdown.
-
-### Crop Pipeline Timeline
-
-```
-Plant → [Seedling: 0–33%] → [Growing: 33–100%] → [Mature] → HARVEST (3-day window) → Storage → Sell
-                                                              ↳ Wither if missed!
-```
-
----
-
-## 🎯 Task Curriculum
-
-Three tasks with escalating complexity, designed so that the optimal strategy for Task 1 fails catastrophically on Task 3.
+Three tasks designed so the optimal strategy for Task 1 fails catastrophically on Task 3.
 
 ### Task 1 — Single Crop Stable 🟢 Easy
 
-| Parameter | Value |
-|---|---|
-| Starting money | $200 |
-| Max days | 30 |
-| Climate | Temperate-dominant |
-| Market noise | ±5% |
-| Daily overhead | $0 |
-| **Goal** | Double your starting money |
+30 days · $200 start · Temperate climate · Goal: double your money
 
-**Grading formula:**
 ```
-net_worth = final_money + storage_value
-score = clamp(net_worth / ($200 × 2.0), 0.01, 0.99)
-      − min(0.20, withered_crops × 0.05)
+score = clamp(net_worth / ($200 × 2.0), 0.01, 0.99) − min(0.20, withered × 0.05)
 ```
 
-**Winning strategy**: Plant wheat (fastest ROI), maintain moisture in 0.35–0.75 range, sell when trend > 0.
+**Winning strategy**: Plant wheat (fastest ROI), maintain moisture 0.35–0.75, sell when trend > 0.
 
 ---
 
 ### Task 2 — Multi-Crop Market Timing 🟡 Medium
 
-| Parameter | Value |
-|---|---|
-| Starting money | $150 |
-| Max days | 45 |
-| Climate | Full rotation (temperate → arid → tropical) |
-| Market noise | ±10% |
-| Daily overhead | $0.50/day |
-| **Goal** | Profit across all 3 crops, sell at price peaks |
+45 days · $150 start · Full climate rotation · $0.50/day overhead
 
-**Grading formula:**
 ```
-profit_score = clamp(net_worth / ($150 × 2.5), 0.01, 0.99)
-timing_score = clamp(premium_revenue / (total_revenue × 0.3), 0.01, 0.99)
 score = 0.6 × profit_score + 0.4 × timing_score − min(0.30, withered × 0.10)
 ```
 
-**40% of your score is timing.** Agents must compare `sell_price vs avg_7d` and hold storage until peak.
+**40% of your score is timing.** Agents must read sinusoidal price cycles and hold inventory against greedy instincts.
 
 ---
 
 ### Task 3 — Drought Survival 🔴 Hard
 
-| Parameter | Value |
-|---|---|
-| Starting money | $100 |
-| Max days | 60 |
-| Drought events | Every 5th day: −15L forced tank drain |
-| Market noise | ±20% |
-| Daily overhead | $1.00/day |
-| Tropical spoilage | 3%/day crop degradation |
-| **Goal** | Survive and maintain profitability under extreme resource pressure |
+60 days · $100 start · Drought every 5th day · $1.00/day overhead · Tropical spoilage 3%/day
 
-**Grading formula:**
 ```
-profit_score     = clamp(net_worth / ($100 × 3.0), 0.01, 0.99)
-survival_score   = 0.99 if survived full 60 days, else days/60
-resilience_score = clamp(healthy_days / max_days, 0.01, 0.99)
-
-score = 0.5 × profit_score + 0.3 × survival_score + 0.2 × resilience_score
-      − min(0.40, withered_crops × 0.15)
+score = 0.5 × profit + 0.3 × survival + 0.2 × resilience − min(0.40, withered × 0.15)
 ```
 
-**Proactive water management is mandatory.** Agents must `pump_water` regularly and pre-irrigate before drought days.
+**Proactive water management is mandatory.** Agents must pre-irrigate before drought events.
 
 ---
 
-## 🏆 Reward Shaping
+## Reward Engineering
 
-A rich, dense reward signal guides agents at every step:
+The dense reward signal is designed to make every failure mode expensive:
 
-| Event | Reward | Notes |
+| Event | Reward | Design Rationale |
 |---|---|---|
-| `plant` | **+0.20** | Commitment bonus — agent started a plan |
-| `irrigate` (rescue) | **+0.50** | Moisture was critically low (<0.25) before action |
+| `plant` | **+0.20** | Commitment bonus — started a plan |
+| `irrigate` (rescue, moisture < 0.25) | **+0.50** | Correct crisis response |
 | `irrigate` (normal) | **+0.10** | Routine maintenance |
-| `irrigate` (wasteful) | **−0.50** | Over-watering (>0.80 before action) |
-| `harvest` | **up to +1.00** | Scales with `stored_kg / max_yield` |
-| `sell` | **+0.30 + premium** | Bonus for above-baseline price premium |
-| `wait` (crops growing) | **+0.05/plot** | Smart patience while rows mature |
-| `wait` (mature plots) | **−0.30/plot** | Every idle day risks permanent wither loss |
-| `wait` (idle empty) | **−0.10/plot** | Wasted opportunity cost |
-| Health maintenance | **+0.10–0.15/plot/day** | Passive bonus scaled by task difficulty |
-| Crop withers | **−2.0 to −5.0** | Hard penalty. Scaled: Easy −2.0, Med −3.5, Hard −5.0 |
-| Spray (no pests) | **−0.20** | Wasteful chemical use |
-| Fertilize (already high) | **−0.20** | Resource waste |
-| Invalid action | **−1.00** | Hard rejection for out-of-context actions |
-| **Terminal bonus** | **up to +10.0** | 3-pillar: 40% profit + 30% stewardship + 30% efficiency |
+| `irrigate` (wasteful, moisture > 0.80) | **−0.50** | Punishes thoughtless action |
+| `harvest` | **up to +1.00** | Scales with stored_kg / max_yield |
+| `sell` above 7d average | **+0.30 + premium** | Market timing bonus |
+| `wait` (crops growing, no mature plots) | **+0.05/plot** | Smart patience |
+| `wait` (mature plots exist) | **−0.30/plot** | Every idle day risks permanent wither |
+| `wait` (empty farm) | **−0.10/plot** | Opportunity cost |
+| Crop withers | **−2.0 to −5.0** | Hard penalty, scaled by task |
+| Wasteful spray/fertilize | **−0.20** | Punishes reflexive action |
+| Invalid action | **−1.00** | Hard rejection |
+| **Terminal bonus** | **up to +10.0** | 0.4×profit + 0.3×stewardship + 0.3×efficiency |
 
-> **Terminal Bonus Details**: `0.4 × profit_score + 0.3 × stewardship_score + 0.3 × efficiency_score`
-> where `efficiency_score = 1 - (wasteful_actions / total_actions)`
+> **The wait penalty is what killed Round 1.** Adding `−0.30/plot` for waiting with mature plots made cowardice genuinely costly, not just suboptimal.
 
 ---
 
-## 🤖 LLM Agent Architecture
+## Physics Engine
 
-`inference.py` implements a **stateless LLM-as-Agent** loop compatible with any OpenAI-format API endpoint:
+Every `end_day` call runs five sequential passes. No random walks — all dynamics are grounded in agricultural science.
 
+**Pass 2 — FAO-56 Penman-Monteith:**
 ```
-System Prompt ──► "Chief Economist & Growth Strategist" role
-                  + RISK AUDIT / MARKET AUDIT / ACTION structure
-       │
-       ▼
-Observation   ──► text_summary + valid_actions + 7d price history
-       │
-       ▼
-LLM Response  ──► Raw JSON (parsed with fallback regex extractor)
-       │
-       ▼
-Parser        ──► parse_action() → validate_action() → FALLBACK → {"action_type": "wait"}
-       │
-       ▼
-Env Step      ──► env.step(action) → new observation + step reward
-       │
-       ▼
-History Buffer ──► Last 4 steps kept in context window
+ET_c = (temperature / 100) × (1.1 - humidity) × K_crop
+soil_moisture -= ET_c + weed_penalty(0.05)
 ```
+Crop Kc values: Wheat=0.80 · Rice=1.10 · Corn=1.20
 
-### Inference Configuration
-
-| Parameter | Default | Env Var |
-|---|---|---|
-| Model | `Qwen/Qwen2.5-72B-Instruct` | `MODEL_NAME` |
-| API Endpoint | `https://router.huggingface.co/v1` | `API_BASE_URL` |
-| HF Token | — | `HF_TOKEN` |
-| Temperature | `0.2` | — |
-| Max tokens | `300` | — |
-| Max steps/episode | `30` | `MAX_STEPS` |
-| Episodes per task | `1` | `EPISODES` |
-| Task filter | all (1, 2, 3) | `FARMING_TASK_ID` |
-
-### Reward Clamping (Phase 2 Compliance)
-
-All per-step rewards are strictly clamped to `(0.01, 0.99)` — never `0.0` or `1.0` — to satisfy the OpenEnv Phase 2 validator:
-
+**Pass 3 — Exponential Pest Outbreak:**
 ```python
-if reward <= 0.0:
-    reward = 0.01
-elif reward >= 1.0:
-    reward = 0.99
+pest_severity = min(1.0, (pest_severity + 0.1) × 1.5)  # exponential!
+health -= 0.05 × pest_severity
 ```
 
-The same clamping is applied at the episode and grader levels in `tasks.py`.
+**Pass 5 — Sinusoidal Market Cycles (Almgren-Chriss impact):**
+```python
+sell_price = base × (1.0 + 0.20 × sin(2π × (day + offset) / 20) + noise)
+price_drop = min(50%, qty / 10kg × 1%)   # permanent market impact
+```
 
 ---
 
-## 🚀 Quick Start
+## Crop Reference
 
-### Prerequisites
+| Crop | Growth | Max Yield | Base Sell | Water Need | Kc |
+|---|---|---|---|---|---|
+| `wheat` | 7 days | 10 kg | $8.00 | Low (0.3) | 0.80 |
+| `rice` | 12 days | 20 kg | $14.00 | **High** (0.7) | 1.10 |
+| `corn` | 18 days | 35 kg | $20.00 | Medium (0.5) | 1.20 |
 
-- Python ≥ 3.11
-- A Hugging Face token (`HF_TOKEN`) with inference access
+> ⚠️ **Harvest Window**: Once a plot reaches `mature`, you have **3 days** to harvest before permanent wither.
 
-### Option A — Local Development
+---
+
+## Performance Baselines
+
+Baseline scores using `Qwen/Qwen2.5-72B-Instruct` at temperature 0.2:
+
+| Task | Difficulty | Baseline | Expert Target | Gap |
+|---|---|---|---|---|
+| 1 — Single Crop Stable | 🟢 Easy | **0.42** | ≥ 0.80 | Market timing |
+| 2 — Multi-Crop Timing | 🟡 Medium | **0.31** | ≥ 0.70 | Misses price peaks |
+| 3 — Drought Survival | 🔴 Hard | **0.19** | ≥ 0.55 | Reactive water management |
+
+---
+
+## Quick Start
 
 ```bash
 # 1. Clone and install
-git clone https://github.com/your-username/FarmSimulation.git
+git clone https://huggingface.co/spaces/Atharva2710/FarmSimulation
 cd FarmSimulation
 pip install -e .
 
@@ -448,205 +272,100 @@ uvicorn server.app:app --host 0.0.0.0 --port 7860
 open http://localhost:7860
 ```
 
-### Option B — Run LLM Inference
-
+**Run LLM inference:**
 ```bash
-# Set credentials
 export HF_TOKEN="hf_your_token_here"
 export MODEL_NAME="Qwen/Qwen2.5-72B-Instruct"
 export FARMING_ENV_URL="http://localhost:7860"
 
-# Run all 3 tasks (produces baseline_results.json)
-python inference.py
-
-# Run a single task
-export FARMING_TASK_ID=2   # 1=easy  2=medium  3=hard
-python inference.py
+python inference.py                 # all 3 tasks
+FARMING_TASK_ID=2 python inference.py  # single task
 ```
 
-### Option C — Docker
-
+**Docker:**
 ```bash
-# Build
 docker build -t farming-sim .
-
-# Run
-docker run -p 7860:7860 \
-  -e HF_TOKEN=hf_your_token_here \
-  farming-sim
-
-# Access dashboard at http://localhost:7860
+docker run -p 7860:7860 -e HF_TOKEN=hf_... farming-sim
 ```
 
-### Option D — Instant Validate
-
+**Validate submission:**
 ```bash
-# Run the full 4-layer submission validation
 ./validate-submission.sh
-
-# Or run individual test phases
-pytest test_phase2.py -v   # Score range validation
-pytest test_phase3.py -v   # Physics determinism
-pytest test_phase4.py -v   # Labor hour system
-pytest test_phase5.py -v   # Session persistence
-pytest test_phase7.py -v   # Full integration
+# ✅ Phase 2: Score range (0.01, 0.99) — PASS
+# ✅ Phase 3: Determinism seed=42 — PASS
+# ✅ Phase 4: Labor hour system — PASS
+# ✅ Phase 5: Session persistence — PASS
+# ✅ Phase 7: Full integration — PASS
+# 🏆 All 5 phases passed. Submission ready.
 ```
 
 ---
 
-## 🌐 API Reference
+## API Reference
 
-All endpoints follow the [OpenEnv Core](https://huggingface.co/openenv) protocol.
-
-### `GET /health`
-
-Liveness probe. Returns `200 OK` when the server is ready.
+OpenEnv-compliant REST API on port 7860.
 
 ```bash
-curl http://localhost:7860/health
-# {"status": "ok"}
-```
-
-### `POST /reset`
-
-Resets the episode and returns the initial observation.
-
-```bash
+# Reset episode
 curl -X POST http://localhost:7860/reset \
   -H "Content-Type: application/json" \
   -d '{"task_id": 2}'
-```
 
-**Response:** `FarmObservation` (see [Observation Space](#observation-space))
-
-### `POST /step`
-
-Takes one action and returns the new observation with reward.
-
-```bash
+# Take an action
 curl -X POST http://localhost:7860/step \
   -H "Content-Type: application/json" \
-  -d '{
-    "action": {
-      "action_type": "plant",
-      "plot_id": 0,
-      "seed_type": "wheat"
-    }
-  }'
+  -d '{"action": {"action_type": "plant", "plot_id": 0, "seed_type": "wheat"}}'
+# → {"observation": {...}, "reward": 0.20, "done": false}
+
+# Health check
+curl http://localhost:7860/health
+# → {"status": "ok"}
 ```
 
-**Response:**
-```json
-{
-  "observation": { "day": 1, "money": 195.0, ... },
-  "reward": 0.2,
-  "done": false
-}
+**Python client:**
+```python
+import requests
+
+obs = requests.post("http://localhost:7860/reset", json={"task_id": 1}).json()
+print(obs["observation"]["text_summary"])
+# "Day 1 | $200.00 | Climate: Temperate (22°C) | Water: 80% | 4 plots available"
+
+result = requests.post("http://localhost:7860/step", json={
+    "action": {"action_type": "buy_seeds", "seed_type": "wheat", "quantity": 4}
+}).json()
+print(result["reward"])  # 0.01 (neutral purchase)
 ```
-
-### `GET /state`
-
-Returns the full internal `FarmState` (includes episode metadata).
-
-### `GET /`
-
-Serves the interactive Gradio dashboard UI.
 
 ---
 
-## 📁 Repository Structure
+## Project Structure
 
 ```
 FarmSimulation/
-│
-├── server/                          # Core application package
-│   ├── app.py                       # FastAPI + Gradio mount entry point
-│   ├── farming_environment.py       # 🧠 Full physics engine (1,400+ lines)
-│   ├── gradio_app.py                # Interactive dashboard (glassmorphic dark theme)
-│   ├── tasks.py                     # EpisodeRecord + grade_task1/2/3 graders
-│   ├── audit_utils.py               # State fidelity & tactical audit helpers
-│   ├── scenario_engine.py           # Pre-built scenario runner
-│   ├── scenario_definitions.py      # Named scenario configs
-│   ├── baseline_inference.py        # Simple heuristic baseline agent
-│   └── requirements.txt             # Server dependencies
-│
-├── models.py                        # 📦 Pydantic schemas + all constants
-│                                    #    (SEED_CONFIG, CLIMATE_CONFIG, FarmAction,
-│                                    #     FarmObservation, FarmState, PlotState)
-│
-├── inference.py                     # 🤖 LLM agent loop (OpenEnv compliance runner)
-├── dual_llm_inference.py            # Experimental: Two-LLM debate architecture
-├── openenv.yaml                     # OpenEnv manifest (name, version, tasks)
-├── pyproject.toml                   # uv-compatible project dependencies
-├── Dockerfile                       # Python 3.11-slim, exposes :7860
-│
-├── test_phase2.py                   # Score range (0.01–0.99) validation
-├── test_phase3.py                   # Physics determinism tests
-├── test_phase4.py                   # Labor hour system tests
-├── test_phase5.py                   # WebSocket/session persistence tests
-├── test_phase7.py                   # Full end-to-end integration tests
-├── validate-submission.sh           # 4-layer submission validation script
-│
-├── robustness_validation.py         # Determinism + skill gradient prover
-├── verify_all.py                    # Complete verification suite runner
-├── baseline_results.json            # Last inference run output
-│
-├── FIXES_APPLIED.md                 # Changelog: bug fixes & balance changes
-├── LLM_JUDGE_STRATEGY.md            # Strategy guide for LLM agents
-├── MATHEMATICAL_FOUNDATION.md       # Physics/economics derivations
-└── docs.html                        # Rich HTML documentation page
+├── server/
+│   ├── app.py                    # FastAPI + Gradio entry point
+│   ├── farming_environment.py    # 🧠 Physics engine (1,400+ lines)
+│   ├── gradio_app.py             # Interactive dashboard (glassmorphic dark)
+│   ├── tasks.py                  # grade_task1/2/3 + EpisodeRecord
+│   └── audit_utils.py            # State fidelity helpers
+├── models.py                     # 📦 Pydantic schemas + constants
+├── inference.py                  # 🤖 LLM agent loop (OpenEnv runner)
+├── train.py                      # GRPO training (TRL + vLLM)
+├── openenv.yaml                  # OpenEnv manifest
+├── Dockerfile                    # Python 3.11-slim, port 7860
+├── assets/
+│   ├── gen1_results.png          # Round 1: wait-spam collapse
+│   ├── gen2_results.png          # Round 2: format/simulation divergence
+│   └── gen3_results.jpg          # Round 3: stability without substance
+├── BLOG.md                       # 📖 Full narrative deep-dive
+├── TRAINING.md                   # Training setup guide
+├── test_phase*.py                # Validation test suite
+└── validate-submission.sh        # 4-layer submission validator
 ```
 
 ---
 
-## 📐 Mathematical Foundations
-
-### Soil Hydrology — FAO-56 Penman-Monteith
-
-Evapotranspiration drives the daily moisture loss from each plot:
-
-$$ET_c = \left(\frac{T}{100} \cdot (1.1 - H)\right) \cdot K_{crop}$$
-
-where $T$ = temperature (°C), $H$ = humidity [0,1], $K_{crop}$ = crop coefficient.
-
-Additionally, weed infestations apply a fixed moisture penalty of **−0.05/day** to simulate competition for water resources.
-
-### Market Impact — Almgren-Chriss (2000)
-
-Large sell orders exhibit two-tier price impact:
-
-**Temporary impact** (slippage — affects only current trade):
-$$P_{exec} = P_{mid} \cdot \left(1 - \eta \cdot Q\right), \quad \eta = 0.005 / 10\text{kg}$$
-
-**Permanent impact** (shifts baseline for future trades):
-$$P_{new} = P_{old} \cdot \left(1 - \gamma \cdot Q\right), \quad \gamma = 0.01 / 10\text{kg}, \quad \text{floor at } 50\%$$
-
-### Sinusoidal Market Cycles
-
-Each crop has a 20-day price wave, phase-offset to prevent synchronization:
-
-$$\text{sell\_price}(d) = P_{base} \cdot \left(1 + 0.20 \cdot \sin\!\left(\frac{2\pi (d + \phi)}{20}\right) + \epsilon\right)$$
-
-| Crop | Phase offset $\phi$ | Peak day |
-|---|---|---|
-| Wheat | 0 | Day 5, 25, 45… |
-| Rice | 7 | Day 12, 32, 52… |
-| Corn | 13 | Day 18, 38, 58… |
-
-### Terminal Bonus — Three-Pillar Score
-
-$$B_{terminal} = 0.40 \cdot S_{profit} + 0.30 \cdot S_{steward} + 0.30 \cdot S_{efficiency}$$
-
-where:
-- $S_{profit} = \min(10, \max(0, (\text{net\_worth}/\text{initial} - 1) \times 5))$  
-- $S_{steward} = (\text{healthy\_days} / \text{episode\_days}) \times 10$  
-- $S_{efficiency} = (1 - \text{wasteful\_actions}/\text{total\_actions}) \times 10$
-
----
-
-## 🧪 Robustness & Compliance
-
-This environment is validated against the OpenEnv Phase 2 certification requirements:
+## Robustness & Compliance
 
 | Requirement | Status | Details |
 |---|---|---|
@@ -655,93 +374,40 @@ This environment is validated against the OpenEnv Phase 2 certification requirem
 | Skill gradient | ✅ Passed | Naive TWAP ≈ 0.25 < Expert timing ≈ 0.80 |
 | Concurrent sessions | ✅ Passed | `SUPPORTS_CONCURRENT_SESSIONS = True` |
 | REST compliance | ✅ Passed | `/reset`, `/step`, `/state`, `/health` |
-| Reward logging format | ✅ Passed | `[STEP]`, `[END]`, `[START]` regex-compatible |
-
-Run the complete validation suite:
-
-```bash
-./validate-submission.sh
-```
-
-Expected output:
-```
-✅ Phase 2: Score range (0.01, 0.99) — PASS
-✅ Phase 3: Determinism seed=42 — PASS
-✅ Phase 4: Labor hour system — PASS
-✅ Phase 5: Session persistence — PASS
-✅ Phase 7: Full integration — PASS
-🏆 All 5 phases passed. Submission ready.
-```
 
 ---
 
-## 📊 Performance Baselines
+## What Three Rounds of Failure Taught Us
 
-Baseline scores collected using `Qwen/Qwen2.5-72B-Instruct` at temperature 0.2:
+**Round 1** — Survival rewards without productivity requirements produce agents that optimize for not-losing rather than winning. The floor and ceiling must be far enough apart that doing nothing is genuinely costly.
 
-| Task | Difficulty | Baseline Score | Expert Target | Notes |
-|---|---|---|---|---|
-| 1 — Single Crop Stable | 🟢 Easy | **0.42** | ≥ 0.80 | Limited market timing |
-| 2 — Multi-Crop Timing | 🟡 Medium | **0.31** | ≥ 0.70 | Misses peak sell windows |
-| 3 — Drought Survival | 🔴 Hard | **0.19** | ≥ 0.55 | Reactive vs. proactive water |
+**Round 2** — Multi-component reward functions with unbalanced scales will always be exploited toward whichever component is easiest to maximize. Format had to become a minor correction signal, not a destination.
 
-> A score ≥ **0.80** across all tasks is considered professional tier.
+**Round 3** — Stability in aggregate metrics can mask mode collapse at the behavioral level. A model repeating one action at 0.70 simulation reward looks similar in graphs to a model reading state and choosing appropriately. The difference only appears when you inspect actual outputs.
 
----
+**The recurring theme:** reward engineering is not a solved problem you apply to a training run. It's an active adversary. Every reward function is a puzzle the model will solve in ways you didn't anticipate.
 
-## 🤝 Contributing
-
-We welcome contributions that improve the environment's realism, extend the task curriculum, or enhance the agent strategies.
-
-```bash
-# 1. Fork and clone
-git clone https://github.com/your-username/FarmSimulation.git
-
-# 2. Create a feature branch
-git checkout -b feat/my-improvement
-
-# 3. Make changes and run the test suite
-pytest test_phase*.py -v
-
-# 4. Run the robustness validator
-python robustness_validation.py
-
-# 5. Submit a pull request
-```
-
-### Code Style
-
-- All environment physics lives in `server/farming_environment.py`
-- All Pydantic schemas and constants live in `models.py`
-- All grading logic lives in `server/tasks.py`
-- Keep the API backward-compatible: `/reset`, `/step`, `/state`, `/health`
+> **Read the full analysis:** [BLOG.md](BLOG.md)
 
 ---
 
-## 📚 Citations
-
-If you use this environment in research, please cite:
+## Citations
 
 ```bibtex
 @misc{farmsimulation2026,
   title  = {FarmSimulation: A Physics-Grounded RL Environment for Precision Agriculture},
   year   = {2026},
-  note   = {Meta PyTorch Hackathon — OpenEnv compatible},
-  url    = {https://huggingface.co/spaces/your-username/FarmSimulation}
+  note   = {Meta PyTorch OpenEnv Hackathon},
+  url    = {https://huggingface.co/spaces/Atharva2710/FarmSimulation}
 }
 ```
 
-**Scientific foundations:**
-
-1. Allen, R. G., Pereira, L. S., Raes, D., & Smith, M. (1998). *Crop evapotranspiration — Guidelines for computing crop water requirements*. FAO Irrigation and Drainage Paper 56. Rome: FAO.
-
-2. Almgren, R., & Chriss, N. (2000). *Optimal execution of portfolio transactions*. Journal of Risk, 3(2), 5–40.
-
-3. Obizhaeva, A. A., & Wang, J. (2013). *Optimal trading strategy and supply/demand dynamics*. Journal of Financial Markets, 16(1), 1–32.
+1. Allen et al. (1998). *Crop evapotranspiration — FAO Irrigation and Drainage Paper 56.* FAO.
+2. Almgren & Chriss (2000). *Optimal execution of portfolio transactions.* Journal of Risk, 3(2), 5–40.
 
 ---
 
-## 📄 License
+## License
 
 MIT License — see [LICENSE](LICENSE) for details.
 
@@ -749,8 +415,10 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 <div align="center">
 
-**Built for the [Meta PyTorch Hackathon](https://huggingface.co/meta-llama) — an OpenEnv-compatible environment for evaluating LLM agents on real-world agricultural planning.**
+**Built for the [Meta PyTorch OpenEnv Hackathon](https://huggingface.co/spaces/Atharva2710/FarmSimulation)**
 
-*If this environment helped your research or project, consider giving it a ⭐*
+*Three training runs. Three failure modes. One progressively clearer picture of what sequential planning actually requires.*
+
+[**Read the story →**](BLOG.md)
 
 </div>

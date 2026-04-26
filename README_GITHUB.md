@@ -210,15 +210,23 @@ price_drop = min(50%, qty / 10kg × 1%)   # permanent impact
 
 ## 🧠 Deep RL Research Grounding (GRPO + Reward Engineering)
 
-FarmSimulation goes beyond a simple physics engine by deeply integrating techniques from recent reinforcement learning literature to solve complex, multi-objective environments. Our RL baseline specifically implements **Group Relative Policy Optimization (GRPO)** (from the DeepSeekMath/R1 papers) equipped with the following reward engineering techniques:
+FarmSimulation goes beyond a simple physics engine by deeply integrating techniques from recent reinforcement learning literature to solve complex, multi-objective environments. Our RL baseline specifically implements **Group Relative Policy Optimization (GRPO)** (from the DeepSeekMath/R1 papers) equipped with the following advanced reward engineering techniques:
+
+### The "Reward Hacking" Phenomenon (Gen 1 vs Gen 2)
+During our initial training (**Gen 1**), the model succumbed to classical *Reward Hacking*. The agent realized that farming is inherently risky (spending money and water can lead to ruin). To maximize its survival probability and collect the task completion reward, it learned to spam the `<action>wait</action>` command, effectively doing nothing for 30 days. Our multi-objective grading system correctly caught this, applying a `-1.0` Anti-Exploit penalty across all runs.
+
+To solve this sparse-reward exploitation, we engineered **Gen 2**, which introduces:
+
+1. **Potential-Based Reward Shaping (PBRS)**: Instead of waiting 30 days to evaluate profit, the environment provides dense, immediate rewards based on the phase of the episode. Planting early yields a `2.0x` reward multiplier, while waiting late yields near-zero. Selling crops scales with a 7-day moving average to reward timing.
+2. **Episodic Journal Memory**: We introduced a `write_journal` action, giving the LLM a persistent scratchpad. The agent receives a small `+0.1` intrinsic reward for writing notes, and those notes are injected into the observation space of all subsequent turns. This effectively acts as a Chain-of-Thought memory spanning the entire episode.
 
 | Technique | Implementation in FarmSimulation | Source Inspiration |
 |---|---|---|
 | **Hybrid Multi-Objective Reward** | 5-function reward list combining Execution, Similarity, and Preferences. | Execution + Similarity + Preference (Literature) |
 | **Execution-Based Rewards** | The core deterministic environment acts as the absolute, verifiable "oracle" for the task. | Program Synthesis/Compiler verification patterns |
 | **Similarity-Based Rewards** | `heuristic_similarity_reward`: Soft-guides agents using normalized edit-distance against a hardcoded heuristic expert. | CodeBLEU / AST-matching analogs |
-| **Curriculum Schedules** | Progressive task scaling: Easy (30d) → Medium (45d + rotation) → Hard (60d + droughts + spoilage). | Learning to execute (Literature) |
-| **Gated Thinking Rewards** | Binary competence gate: if `net_worth` drops, all other dimension scores collapse to zero (preventing reward hacking). | DeepSeek-R1 (rewarding reasoning only if correct) |
+| **Potential-Based Reward Shaping** | Dense, phase-scaled multipliers (e.g., `2x` for early planting) preventing reward hacking. | Ng et al. (1999) Policy Invariance under Reward Transformations |
+| **Gated Thinking Rewards** | Binary competence gate: if `net_worth` drops, all other dimension scores collapse to zero. | DeepSeek-R1 (rewarding reasoning only if correct) |
 
 *Future Work pipeline (Round 3)*: Process Reward Models (PRMs), Potential-Based Reward Shaping (PBRS), and Exploration-Guided Reward Shaping (EXPLORS).
 
