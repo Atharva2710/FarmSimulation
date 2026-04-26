@@ -5,8 +5,6 @@ colorFrom: green
 colorTo: yellow
 sdk: docker
 app_port: 7860
-pinned: false
-app_port: 7860
 tags:
   - openenv
 ---
